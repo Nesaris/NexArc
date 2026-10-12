@@ -228,7 +228,7 @@ la **commande d'une ligne** ; les deux lancent le même script, avec le même co
 | Système | Installateur | Commande |
 |---|---|---|
 | Windows (tâche planifiée SYSTEM) | `installer-nexarc.exe` : double-clic, accord d'un administrateur | PowerShell en administrateur : `powershell -ExecutionPolicy Bypass -Command "…; irm '<adresse>' \| iex"` |
-| macOS (launchd) | `installer-nexarc-macos.zip` : « Installer NEXARC.command », clic droit puis « Ouvrir » | Terminal : `curl -fsSL '<adresse>' \| sudo bash` |
+| macOS (launchd) | `installer-nexarc-macos.zip` : « Installer NEXARC.command » ; s'il est bloqué, Réglages Système → Confidentialité et sécurité → « Ouvrir quand même » | Terminal : `curl -fsSL '<adresse>' \| sudo bash` |
 | Linux (systemd) | `installer-nexarc.sh` : `sudo bash installer-nexarc.sh` | `curl -fsSL '<adresse>' \| sudo bash` |
 
 L'exécutable Windows est compilé à la construction de l'image, depuis sa source
@@ -238,7 +238,10 @@ l'exécutable la revérifie caractère par caractère, demande l'élévation par
 manifeste, puis lance le PowerShell du système par son chemin complet. Il
 n'est pas signé : SmartScreen avertit (« Informations complémentaires », puis
 « Exécuter quand même »). L'archive macOS garde le droit d'exécution du fichier
-`.command` ; non signé lui aussi, il s'ouvre par clic droit puis « Ouvrir ».
+`.command` ; non signé lui aussi, macOS peut refuser de l'ouvrir : depuis
+macOS 15, le clic droit ne suffit plus, il faut passer par Réglages Système →
+Confidentialité et sécurité → « Ouvrir quand même ». La commande d'une ligne,
+lancée dans le Terminal, n'a pas cette étape.
 
 Le script Windows cherche Python 3 (en écartant le raccourci du Microsoft
 Store), l'installe par winget s'il manque, ferme `%ProgramData%\NexarcAgent`

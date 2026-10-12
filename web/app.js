@@ -661,7 +661,7 @@ async function dialogueInscription(relais) {
   const copier = cmd => navigator.clipboard?.writeText(cmd).then(() => toast('Commande copiée.'), () => toast('Copie impossible.', true));
   const AIDE = {
     windows: { fichier: 'Télécharger l’installateur (.exe)', etapes: 'Double-clique sur le fichier : Windows demande l’accord d’un administrateur, puis l’agent s’installe, Python compris s’il manque. L’installateur n’est pas signé : si SmartScreen s’affiche, « Informations complémentaires » puis « Exécuter quand même ».', ligne: 'Ou colle dans PowerShell, ouvert en administrateur :' },
-    macos: { fichier: 'Télécharger l’installateur (.zip)', etapes: 'Ouvre l’archive, puis clic droit sur « Installer NEXARC » et « Ouvrir » (un fichier non signé ne s’ouvre pas d’un double-clic). Le Terminal demande le mot de passe d’un administrateur. Sans Python 3 sur le Mac, lance d’abord « xcode-select --install ».', ligne: 'Ou colle dans le Terminal :' },
+    macos: { fichier: 'Télécharger l’installateur (.zip)', etapes: 'Ouvre l’archive, puis double-clique sur « Installer NEXARC ». Le fichier n’est pas signé : si macOS refuse de l’ouvrir, Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ». Le Terminal demande le mot de passe d’un administrateur. Sans Python 3 sur le Mac, lance d’abord « xcode-select --install ». La commande ci-dessous évite ces étapes.', ligne: 'Ou colle dans le Terminal (le plus simple) :' },
     linux: { fichier: 'Télécharger le script (.sh)', etapes: 'Lance-le avec « sudo bash installer-nexarc.sh ». Debian, Ubuntu, Fedora et Arch : Python est installé s’il manque.', ligne: 'Ou colle dans un terminal :' },
   };
   const peindreZone = () => {
