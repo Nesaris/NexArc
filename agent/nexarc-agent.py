@@ -59,6 +59,26 @@ ENV_C = dict(os.environ, LC_ALL='C', LANG='C')
 CONFIG_DIR = (os.path.join(os.environ.get('ProgramData', r'C:\ProgramData'), 'NexarcAgent') if IS_WIN
               else '/usr/local/nexarc-agent' if IS_MAC else '/opt/nexarc-agent')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'agent.json')
+JOURNAL_FICHIER = os.path.join(CONFIG_DIR, 'agent.log')
+JOURNAL_MAX = 1_000_000
+
+
+def journal(*parts):
+    """Une ligne du service. Sous Linux, systemd la range (journalctl -u
+    nexarc-agent) ; sous Windows et macOS, où aucun service ne garde la sortie,
+    elle va aussi dans agent.log, à côté de la configuration et fermé comme
+    elle : 1 Mo, plus une génération."""
+    ligne = ' '.join(str(x) for x in parts)
+    print(ligne, flush=True)
+    if IS_LINUX:
+        return
+    try:
+        if os.path.exists(JOURNAL_FICHIER) and os.path.getsize(JOURNAL_FICHIER) > JOURNAL_MAX:
+            os.replace(JOURNAL_FICHIER, JOURNAL_FICHIER + '.1')
+        with open(JOURNAL_FICHIER, 'a', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S ') + ligne + '\n')
+    except OSError:
+        pass  # un journal plein ou illisible n'arrête jamais l'agent
 
 
 def normaliser_empreinte(texte):
@@ -448,7 +468,7 @@ def collect_software():
                         if p and p[0]:
                             apps.append({'name': p[0], 'version': p[1] if len(p) > 1 else '', 'publisher': '', 'source': 'rpm'})
     except Exception as e:  # noqa: BLE001 — un registre ou un gestionnaire en panne ne doit pas taire le reste
-        print('[nexarc-agent] inventaire logiciel partiel :', e)
+        journal('[nexarc-agent] inventaire logiciel partiel :', e)
     apps.sort(key=lambda a: a['name'].lower())
     return apps[:3000]
 
@@ -488,7 +508,7 @@ def collect_updates():
                         secu = 'security' in line.lower()
                         ups.append({'name': nom, 'current': '', 'available': (p[2].strip('()') if len(p) > 2 else ''), 'security': secu, 'kind': 'Système'})
     except Exception as e:  # noqa: BLE001 — une source en panne ne doit pas taire les autres
-        print('[nexarc-agent] mises à jour partielles :', e)
+        journal('[nexarc-agent] mises à jour partielles :', e)
     _MAJ_EN_ATTENTE[0] = len(ups)
     return ups[:600]
 
@@ -578,14 +598,14 @@ def poll_jobs(sess, base, headers, timeout):
     except (requests.RequestException, ValueError):
         return False
     for job in lot.get('jobs', []):
-        print('[nexarc-agent] tâche %s %s' % (job.get('id'), job.get('kind')))
+        journal('[nexarc-agent] tâche %s %s' % (job.get('id'), job.get('kind')))
         rc, out = run_job(job, job_timeout)
         if job.get('kind') in ('install', 'uninstall', 'inventory', 'update'):
             inventaire_a_refaire = True
         try:
             sess.post('%s/api/agent/jobs/%s/result' % (base, job['id']), json={'output': out[-SORTIE_MAX:], 'rc': rc}, headers=headers, timeout=15)
         except requests.RequestException as e:
-            print('[nexarc-agent] résultat non transmis :', e)
+            journal('[nexarc-agent] résultat non transmis :', e)
     return inventaire_a_refaire
 
 
@@ -731,6 +751,8 @@ def boucle(cfg, a):
     relais = cfg.get('relais', False)
     inv_tous = 12
     cycle = inv_tous
+    etat = None  # dernier état journalisé : une ligne par changement, pas une par remontée
+    journal('[nexarc-agent] démarré, console %s' % base)
     while True:
         try:
             payload = collect(site, nom, relais)
@@ -746,20 +768,25 @@ def boucle(cfg, a):
             cycle += 1
             r = sess.post(base + '/api/ingest', json=payload, headers=headers, timeout=30)
             if r.status_code == 200:
-                print('[nexarc-agent] ok  cpu=%s%% ram=%s%%' % (payload['cpu'], payload['ram']))
+                if etat != 200:
+                    journal('[nexarc-agent] remontées acceptées')
             elif r.status_code == 401:
-                print('[nexarc-agent] 401 — jeton refusé ; réinscription nécessaire.')
+                journal('[nexarc-agent] jeton refusé (révoqué ou machine supprimée) : réinscription nécessaire ; nouvel essai dans %d min.' % (ATTENTE_JETON_REFUSE // 60))
+                etat = 401
                 time.sleep(ATTENTE_JETON_REFUSE)
                 continue
-            else:
-                print('[nexarc-agent] serveur %s' % r.status_code)
+            elif etat != r.status_code:
+                journal('[nexarc-agent] la console a répondu %s' % r.status_code)
+            etat = r.status_code
         except requests.RequestException as e:
-            print('[nexarc-agent] remontée échouée :', e)
+            if etat != 'reseau':
+                journal('[nexarc-agent] console injoignable :', e)
+            etat = 'reseau'
         try:
             if poll_jobs(sess, base, headers, a.job_timeout):
                 cycle = inv_tous
         except requests.RequestException as e:
-            print('[nexarc-agent] tâches :', e)
+            journal('[nexarc-agent] tâches :', e)
         time.sleep(max(5, a.interval))
 
 

@@ -252,5 +252,23 @@ class Durcissement(unittest.TestCase):
             shutil.rmtree(dossier, ignore_errors=True)
 
 
+class ServiceEtJournal(unittest.TestCase):
+    def test_journal_dans_un_fichier_borne_hors_linux(self):
+        d = tempfile.mkdtemp(prefix='agent-log-')
+        avant = (agent.IS_LINUX, agent.JOURNAL_FICHIER, agent.JOURNAL_MAX)
+        try:
+            agent.IS_LINUX, agent.JOURNAL_FICHIER, agent.JOURNAL_MAX = False, os.path.join(d, 'agent.log'), 200
+            for i in range(12):
+                agent.journal('[nexarc-agent] ligne', i)
+            self.assertTrue(os.path.exists(agent.JOURNAL_FICHIER + '.1'), 'une génération gardée')
+            self.assertLessEqual(os.path.getsize(agent.JOURNAL_FICHIER), 200 + 60)
+            self.assertFalse(os.path.exists(agent.JOURNAL_FICHIER + '.2'))
+            with open(agent.JOURNAL_FICHIER, encoding='utf-8') as f:
+                self.assertRegex(f.read().splitlines()[-1], r'^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[nexarc-agent\] ligne 11$')
+        finally:
+            agent.IS_LINUX, agent.JOURNAL_FICHIER, agent.JOURNAL_MAX = avant
+            shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == '__main__':
     unittest.main()
