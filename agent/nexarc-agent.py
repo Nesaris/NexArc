@@ -757,7 +757,8 @@ def self_install(url):
               '$p=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest;'
               '$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries '
               '-RestartInterval (New-TimeSpan -Minutes 1) -RestartCount 999;'
-              'Register-ScheduledTask -TaskName "NexarcAgent" -Action $a -Trigger $t -Principal $p -Settings $s -Force' % (py, dest))
+              'Register-ScheduledTask -TaskName "NexarcAgent" -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null;'
+              'Start-ScheduledTask -TaskName "NexarcAgent"' % (py, dest))
         return run(['powershell', '-NoProfile', '-Command', ps], 60)
     if IS_MAC:
         plist = '/Library/LaunchDaemons/fr.nexarc.agent.plist'
@@ -825,7 +826,7 @@ def bootstrap(a):
         sys.exit('droits administrateur requis (sudo, ou clic droit → administrateur).')
     if rc != 0:
         sys.exit('service non installé : %s' % out[:200])
-    print('✓ Terminé — le poste apparaît dans la console.')
+    print('→ Service installé et démarré.')
 
 
 def boucle(cfg, a):

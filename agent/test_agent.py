@@ -318,6 +318,21 @@ class Paquets(unittest.TestCase):
 
 
 class ServiceEtJournal(unittest.TestCase):
+    def test_tache_windows_demarree_sans_attendre_un_redemarrage(self):
+        appels, avant = [], (agent.IS_WIN, agent.run, agent.CONFIG_DIR, agent.sys.argv)
+        d = tempfile.mkdtemp(prefix='agent-win-')
+        try:
+            agent.IS_WIN, agent.CONFIG_DIR = True, d
+            agent.sys.argv = [os.path.join(ICI, 'nexarc-agent.py')]
+            agent.run = lambda cmd, timeout=25, env=None: (appels.append(cmd), (0, ''))[1]
+            agent.self_install('https://nexarc.exemple.org')
+            ps = appels[-1][-1]
+            self.assertIn('Register-ScheduledTask -TaskName "NexarcAgent"', ps)
+            self.assertTrue(ps.rstrip().endswith('Start-ScheduledTask -TaskName "NexarcAgent"'))
+        finally:
+            agent.IS_WIN, agent.run, agent.CONFIG_DIR, agent.sys.argv = avant
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_journal_dans_un_fichier_borne_hors_linux(self):
         d = tempfile.mkdtemp(prefix='agent-log-')
         avant = (agent.IS_LINUX, agent.JOURNAL_FICHIER, agent.JOURNAL_MAX)
