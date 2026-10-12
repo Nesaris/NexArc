@@ -252,6 +252,71 @@ class Durcissement(unittest.TestCase):
             shutil.rmtree(dossier, ignore_errors=True)
 
 
+class Paquets(unittest.TestCase):
+    """Les tâches de paquets doivent marcher là où l'agent tourne vraiment :
+    en SYSTEM sous Windows, en root par un LaunchDaemon sous macOS, sans
+    terminal sous Linux."""
+
+    def setUp(self):
+        self.avant = (agent.IS_WIN, agent.IS_MAC, agent.IS_LINUX, agent.shutil.which, agent.run, os.environ.get('ProgramFiles'))
+
+    def tearDown(self):
+        agent.IS_WIN, agent.IS_MAC, agent.IS_LINUX, agent.shutil.which, agent.run, pf = self.avant
+        if pf is None:
+            os.environ.pop('ProgramFiles', None)
+        else:
+            os.environ['ProgramFiles'] = pf
+
+    def test_winget_retrouve_hors_du_path_de_system(self):
+        racine = tempfile.mkdtemp(prefix='pf-')
+        try:
+            for v in ('1.9.25200.0', '1.23.1911.0', '1.21.10120.0'):
+                d = os.path.join(racine, 'WindowsApps', 'Microsoft.DesktopAppInstaller_%s_x64__8wekyb3d8bbwe' % v)
+                os.makedirs(d)
+                open(os.path.join(d, 'winget.exe'), 'w').close()
+            os.environ['ProgramFiles'] = racine
+            agent.shutil.which = lambda nom: None
+            agent.IS_WIN, agent.IS_MAC, agent.IS_LINUX = True, False, False
+            cmd = agent.pkg_cmd('install', 'Mozilla.Firefox')
+            self.assertIn('1.23.1911.0', cmd[0], 'la version la plus récente, comparée en nombres')
+            self.assertEqual(cmd[1:5], ['install', '-e', '--id', 'Mozilla.Firefox'])
+            self.assertIn('--accept-source-agreements', agent.pkg_cmd('uninstall', 'Mozilla.Firefox'))
+            shutil.rmtree(os.path.join(racine, 'WindowsApps'))
+            self.assertEqual(agent.run_job({'kind': 'install', 'payload': 'Mozilla.Firefox'}, 5), (1, 'winget introuvable sur ce poste (App Installer absent).'))
+        finally:
+            shutil.rmtree(racine, ignore_errors=True)
+
+    def test_homebrew_lance_au_nom_de_son_proprietaire(self):
+        if os.geteuid() != 0:
+            self.skipTest('demande root pour poser le propriétaire du faux brew')
+        import pwd
+        d = tempfile.mkdtemp(prefix='brew-')
+        try:
+            brew = os.path.join(d, 'brew')
+            open(brew, 'w').close()
+            nobody = pwd.getpwnam('nobody')
+            os.chown(brew, nobody.pw_uid, nobody.pw_gid)
+            agent.shutil.which = lambda nom: brew if nom == 'brew' else None
+            agent.IS_WIN, agent.IS_MAC, agent.IS_LINUX = False, True, False
+            self.assertEqual(agent.pkg_cmd('install', 'tree'), ['/usr/bin/sudo', '-u', 'nobody', '-H', '--', brew, 'install', 'tree'])
+            self.assertEqual(agent.maj_cmd(''), ['softwareupdate', '-i', '-a'])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_linux_premier_gestionnaire_present_et_apt_sans_question(self):
+        agent.IS_WIN, agent.IS_MAC, agent.IS_LINUX = False, False, True
+        agent.shutil.which = lambda nom: '/usr/bin/dnf' if nom == 'dnf' else None
+        self.assertEqual(agent.pkg_cmd('install', 'tree'), ['dnf', 'install', '-y', '-q', 'tree'])
+        self.assertEqual(agent.maj_cmd(''), ['dnf', 'upgrade', '-y', '-q'])
+        agent.shutil.which = lambda nom: '/usr/bin/apt-get' if nom == 'apt-get' else None
+        appels = []
+        agent.run = lambda cmd, timeout=25, env=None: (appels.append((cmd, (env or {}).get('DEBIAN_FRONTEND'))), (0, 'ok'))[1]
+        self.assertEqual(agent.run_job({'kind': 'install', 'payload': 'tree'}, 5), (0, 'ok'))
+        self.assertEqual(appels, [(['apt-get', 'update', '-qq'], 'noninteractive'), (['apt-get', 'install', '-y', '-q', 'tree'], 'noninteractive')])
+        agent.shutil.which = lambda nom: None
+        self.assertEqual(agent.run_job({'kind': 'update', 'payload': ''}, 5)[0], 1)
+
+
 class ServiceEtJournal(unittest.TestCase):
     def test_journal_dans_un_fichier_borne_hors_linux(self):
         d = tempfile.mkdtemp(prefix='agent-log-')

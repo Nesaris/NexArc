@@ -477,7 +477,10 @@ def collect_updates():
     ups = []
     try:
         if IS_WIN:
-            rc, out = run(['winget', 'upgrade', '--include-unknown'], 90)
+            try:
+                rc, out = run([winget(), 'upgrade', '--include-unknown', '--accept-source-agreements'], 90)
+            except Indisponible:
+                rc, out = 1, ''
             if rc == 0:
                 for line in out.splitlines():
                     parts = [c for c in line.split('  ') if c.strip()]
@@ -497,8 +500,15 @@ def collect_updates():
                 line = line.strip()
                 if line.startswith('* Label:'):
                     ups.append({'name': line.split(':', 1)[1].strip(), 'current': '', 'available': '', 'security': True, 'kind': 'Système'})
-        else:
-            run(['apt-get', 'update', '-qq'], 120)
+        elif shutil.which('dnf'):
+            rc, out = run(['dnf', '-q', 'check-update'], 120)
+            if rc == 100:  # 100 : des mises à jour attendent
+                for line in out.splitlines():
+                    p = line.split()
+                    if len(p) == 3 and '.' in p[0]:
+                        ups.append({'name': p[0].rsplit('.', 1)[0], 'current': '', 'available': p[1], 'security': False, 'kind': 'Système'})
+        elif shutil.which('apt-get'):
+            run(['apt-get', 'update', '-qq'], 120, env=ENV_PAQUETS)
             rc, out = run(['apt-get', '-s', 'upgrade'], 60)
             if rc == 0:
                 for line in out.splitlines():
@@ -513,28 +523,100 @@ def collect_updates():
     return ups[:600]
 
 
+class Indisponible(Exception):
+    """Le gestionnaire de paquets du poste est introuvable : la tâche échoue avec ce message."""
+
+
+def winget():
+    """winget est une application installée par utilisateur : le compte SYSTEM,
+    sous lequel tourne l'agent, ne l'a pas dans son PATH. Son exécutable vit
+    dans WindowsApps, un dossier par version : la plus récente."""
+    trouve = shutil.which('winget')
+    if trouve:
+        return trouve
+    import glob
+    racine = os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'), 'WindowsApps')
+    candidats = glob.glob(os.path.join(racine, 'Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe', 'winget.exe'))
+
+    def version(chemin):
+        m = re.search(r'DesktopAppInstaller_([0-9.]+)_', chemin)
+        return tuple(int(x) for x in m.group(1).split('.')) if m else ()
+    if not candidats:
+        raise Indisponible('winget introuvable sur ce poste (App Installer absent).')
+    return max(candidats, key=version)
+
+
+def brew():
+    """Homebrew refuse de tourner en root, et le PATH d'un LaunchDaemon ne
+    l'inclut pas : son chemin complet, lancé au nom du propriétaire de son
+    installation."""
+    import pwd
+    for chemin in (shutil.which('brew'), '/opt/homebrew/bin/brew', '/usr/local/bin/brew'):
+        if chemin and os.path.exists(chemin):
+            proprietaire = pwd.getpwuid(os.stat(chemin).st_uid).pw_name
+            if os.geteuid() == 0 and proprietaire != 'root':
+                return ['/usr/bin/sudo', '-u', proprietaire, '-H', '--', chemin]
+            return [chemin]
+    raise Indisponible('Homebrew introuvable sur ce Mac.')
+
+
+# Linux : le premier gestionnaire présent ; les commandes sont non interactives.
+GESTIONNAIRES = {
+    'apt-get': {'install': ['apt-get', 'install', '-y', '-q'], 'uninstall': ['apt-get', 'remove', '-y', '-q'],
+                'update': ['apt-get', 'install', '-y', '-q', '--only-upgrade'], 'tout': ['apt-get', 'upgrade', '-y', '-q'],
+                'avant': ['apt-get', 'update', '-qq']},
+    'dnf': {'install': ['dnf', 'install', '-y', '-q'], 'uninstall': ['dnf', 'remove', '-y', '-q'],
+            'update': ['dnf', 'upgrade', '-y', '-q'], 'tout': ['dnf', 'upgrade', '-y', '-q']},
+    'zypper': {'install': ['zypper', '--non-interactive', 'install'], 'uninstall': ['zypper', '--non-interactive', 'remove'],
+               'update': ['zypper', '--non-interactive', 'update'], 'tout': ['zypper', '--non-interactive', 'update']},
+    'pacman': {'install': ['pacman', '-S', '--noconfirm', '--needed'], 'uninstall': ['pacman', '-R', '--noconfirm'],
+               'update': ['pacman', '-S', '--noconfirm'], 'tout': ['pacman', '-Syu', '--noconfirm']},
+}
+# apt sans question (fichiers de configuration, services à redémarrer).
+ENV_PAQUETS = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_MODE='a')
+
+
+def gestionnaire_linux():
+    for nom, cmds in GESTIONNAIRES.items():
+        if shutil.which(nom):
+            return cmds
+    raise Indisponible('aucun gestionnaire de paquets reconnu (apt, dnf, zypper, pacman).')
+
+
 def pkg_cmd(kind, paquet):
-    """Commande gestionnaire de paquets — arguments en liste, paquet validé."""
+    """Commande gestionnaire de paquets — arguments en liste, paquet validé.
+    None : nom de paquet refusé ; Indisponible : pas de gestionnaire."""
     if not PAQUET.match(paquet):
         return None
     if IS_WIN:
         if kind == 'install':
-            return ['winget', 'install', '-e', '--id', paquet, '--silent', '--accept-source-agreements', '--accept-package-agreements']
-        return ['winget', 'uninstall', '-e', '--id', paquet, '--silent']
+            return [winget(), 'install', '-e', '--id', paquet, '--silent', '--accept-source-agreements', '--accept-package-agreements']
+        return [winget(), 'uninstall', '-e', '--id', paquet, '--silent', '--accept-source-agreements']
     if IS_MAC:
-        return ['brew', 'install' if kind == 'install' else 'uninstall', paquet]
-    return ['apt-get', 'install' if kind == 'install' else 'remove', '-y', paquet]
+        return brew() + ['install' if kind == 'install' else 'uninstall', paquet]
+    return gestionnaire_linux()[kind] + [paquet]
 
 
 def maj_cmd(paquet):
     if paquet and not PAQUET.match(paquet):
         return None
     if IS_WIN:
-        return ['winget', 'upgrade', '-e', '--id', paquet, '--silent', '--accept-package-agreements'] if paquet \
-            else ['winget', 'upgrade', '--all', '--silent', '--accept-package-agreements']
+        return [winget(), 'upgrade', '-e', '--id', paquet, '--silent', '--accept-source-agreements', '--accept-package-agreements'] if paquet \
+            else [winget(), 'upgrade', '--all', '--silent', '--accept-source-agreements', '--accept-package-agreements']
     if IS_MAC:
-        return ['brew', 'upgrade', paquet] if paquet else ['softwareupdate', '-i', '-a']
-    return ['apt-get', 'install', '-y', '--only-upgrade', paquet] if paquet else ['apt-get', 'upgrade', '-y']
+        return brew() + ['upgrade', paquet] if paquet else ['softwareupdate', '-i', '-a']
+    g = gestionnaire_linux()
+    return g['update'] + [paquet] if paquet else g['tout']
+
+
+def paquets(cmd, timeout):
+    """Une commande de paquets : sous apt, les listes rafraîchies d'abord."""
+    if IS_LINUX:
+        avant = gestionnaire_linux().get('avant')
+        if avant:
+            run(avant, timeout, env=ENV_PAQUETS)
+        return run(cmd, timeout, env=ENV_PAQUETS)
+    return run(cmd, timeout)
 
 
 def shell_fixe(commande):
@@ -552,12 +634,15 @@ def run_job(job, timeout):
         return 0, 'inventaire régénéré'
     if kind == 'wol':
         return wol_send(payload)
-    if kind == 'update':
-        cmd = maj_cmd(payload.strip())
-        return (1, 'nom de paquet refusé') if cmd is None else run(cmd, timeout)
-    if kind in ('install', 'uninstall'):
-        cmd = pkg_cmd(kind, payload.strip())
-        return (1, 'nom de paquet refusé') if cmd is None else run(cmd, timeout)
+    try:
+        if kind == 'update':
+            cmd = maj_cmd(payload.strip())
+            return (1, 'nom de paquet refusé') if cmd is None else paquets(cmd, timeout)
+        if kind in ('install', 'uninstall'):
+            cmd = pkg_cmd(kind, payload.strip())
+            return (1, 'nom de paquet refusé') if cmd is None else paquets(cmd, timeout)
+    except Indisponible as e:
+        return 1, str(e)
     if kind == 'cmd':
         return run(shell_fixe(payload), timeout)
     return 1, 'type de tâche inconnu'
