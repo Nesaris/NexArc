@@ -134,17 +134,22 @@ Write-Host "OK - le poste doit apparaitre dans la console sous une minute."
 }
 
 export const BUILDERS = {
-  linux: [scriptLinux, 'installer-nexarc.sh', 'text/x-shellscript'],
-  macos: [scriptMacos, 'installer-nexarc.command', 'text/x-shellscript'],
-  windows: [scriptWindows, 'installer-nexarc.ps1', 'text/plain'],
+  linux: [scriptLinux, 'installer-nexarc.sh', 'text/x-shellscript; charset=utf-8'],
+  macos: [scriptMacos, 'installer-nexarc.command', 'text/x-shellscript; charset=utf-8'],
+  // charset déclaré : sans lui, irm de Windows PowerShell 5.1 lit le script en ISO-8859-1.
+  windows: [scriptWindows, 'installer-nexarc.ps1', 'text/plain; charset=utf-8'],
 };
 
 // L'adresse du script d'installation, code compris. Ses valeurs ont passé
-// controler() : rien n'y sort des apostrophes de bash ou de PowerShell.
+// controler() : rien n'y sort des apostrophes de bash ou de PowerShell. Le site
+// et le nom sont encodés entièrement, parenthèses comprises (encodeURIComponent
+// les laisse) : l'installateur Windows n'admet dans l'adresse que les
+// caractères d'une URL encodée, et refusait « Siège (Paris) ».
+const encoder = v => encodeURIComponent(v).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 export function urlScript(os, base, code, { site = '', nom = '', relais = false } = {}) {
   let url = `${sansBarreFinale(base)}/api/enroll/script?os=${os}&code=${code}`;
-  if (site) url += `&site=${encodeURIComponent(site)}`;
-  if (nom) url += `&name=${encodeURIComponent(nom)}`;
+  if (site) url += `&site=${encoder(site)}`;
+  if (nom) url += `&name=${encoder(nom)}`;
   if (relais) url += '&relais=1';
   return url;
 }

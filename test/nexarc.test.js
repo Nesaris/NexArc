@@ -1078,6 +1078,27 @@ const octets = (port, chemin) => new Promise((resolve, reject) => {
   }).on('error', reject);
 });
 
+test('inscription : site et nom avec parenthèses et accents, adresse que l’installateur Windows accepte, scripts en UTF-8', async () => {
+  const info = (await membre.post('/api/enroll/info', { site: 'Siège (Paris)', name: 'PC (accueil)' })).json;
+  const adresse = info.commands.windows.match(/irm '([^']+)'/)[1];
+  // L'alphabet que l'exécutable admet, relu dans sa source : le même contrôle, pas une copie qui dériverait.
+  const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'agent', 'installateur-windows', 'installateur.c'), 'utf8');
+  const autres = /strchr\("([^"]+)", c\)/.exec(source)[1];
+  const admis = c => /[A-Za-z0-9]/.test(c) || autres.includes(c);
+  assert.deepEqual([...adresse].filter(c => !admis(c)), [], `caractères que l’installateur Windows refuserait : ${adresse}`);
+  assert.match(adresse, /&site=Si%C3%A8ge%20%28Paris%29&name=PC%20%28accueil%29$/);
+  assert.ok(info.downloads.windows.endsWith('&site=Si%C3%A8ge%20%28Paris%29&name=PC%20%28accueil%29'));
+  // Le serveur relit ces valeurs telles quelles dans le script.
+  const anon = s.client();
+  const ps = await anon.get(new URL(adresse).pathname + new URL(adresse).search);
+  assert.equal(ps.status, 200);
+  assert.equal(ps.entetes['content-type'], 'text/plain; charset=utf-8', 'irm de PowerShell 5.1 lit le script en UTF-8');
+  assert.match(ps.texte, /\$Site = 'Siège \(Paris\)'; \$Nom = 'PC \(accueil\)'/);
+  const sh = await anon.get(`/api/enroll/script?os=linux&code=${info.code}&site=Si%C3%A8ge%20%28Paris%29`);
+  assert.equal(sh.entetes['content-type'], 'text/x-shellscript; charset=utf-8');
+  assert.match(sh.texte, /SITE='Siège \(Paris\)'/);
+});
+
 test('inscription : installateurs à télécharger (exécutable Windows, archive macOS, script Linux), même script que la commande', async () => {
   const info = (await membre.post('/api/enroll/info', { site: 'Prod', name: 'serveur-a' })).json;
   const anon = s.client();
