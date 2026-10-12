@@ -277,7 +277,16 @@ L'agent (`agent/nexarc-agent.py`, Python 3, `psutil` et `requests`) :
   comme antivirus : un serveur sans lui est déclaré « absent » ;
 - n'exécute qu'une liste fermée de types de tâches, identique à celle du serveur,
   sans shell interpolé, avec des délais et une sortie bornés ;
-- ne relève et ne rend que les tâches de sa propre machine.
+- ne relève et ne rend que les tâches de sa propre machine ;
+- installe, désinstalle et met à jour par le gestionnaire du système, sans
+  question : winget sous Windows (retrouvé dans WindowsApps, où le compte
+  SYSTEM ne l'a pas dans son PATH), Homebrew sous macOS (lancé au nom du
+  propriétaire de son installation, puisqu'il refuse root), apt, dnf, zypper
+  ou pacman sous Linux ;
+- tient un journal d'une ligne par changement d'état (démarrage, remontées
+  acceptées, console injoignable, jeton refusé, tâches) : `journalctl -u
+  nexarc-agent` sous Linux, `%ProgramData%\NexarcAgent\agent.log` sous Windows,
+  `/usr/local/nexarc-agent/agent.log` sous macOS (1 Mo, plus une génération).
 
 Révoquer un jeton — poste perdu, jeton exposé, incident :
 
