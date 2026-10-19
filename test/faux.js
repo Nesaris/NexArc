@@ -110,7 +110,7 @@ export async function captureUdp() {
 // Carte Redfish HTTPS au certificat auto-signé : exige ses identifiants
 // (Basic), expose un système et son action Reset. `actions` garde les
 // ResetType reçus, `refus` les accès sans les bons identifiants.
-export async function fauxRedfish({ utilisateur = 'root', motDePasse = 'motdepasse-carte' } = {}) {
+export async function fauxRedfish({ utilisateur = 'root', motDePasse = 'motdepasse-carte', membre = null } = {}) {
   const c = certificatEssai('carte-redfish');
   const actions = [];
   let refus = 0;
@@ -120,7 +120,7 @@ export async function fauxRedfish({ utilisateur = 'root', motDePasse = 'motdepas
     let corps = ''; req.on('data', morceau => { corps += morceau; }); req.on('end', () => {
       if (req.headers.authorization !== attendu) { refus++; res.writeHead(401); return res.end(); }
       const json = o => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
-      if (req.method === 'GET' && req.url === '/redfish/v1/Systems') return json({ Members: [{ '@odata.id': systeme }] });
+      if (req.method === 'GET' && req.url === '/redfish/v1/Systems') return json({ Members: [{ '@odata.id': membre ?? systeme }] });
       if (req.method === 'GET' && req.url === systeme) {
         return json({ PowerState: 'On', Model: 'Serveur A', Actions: { '#ComputerSystem.Reset': { target: reset, 'ResetType@Redfish.AllowableValues': ['On', 'ForceOff', 'GracefulShutdown', 'ForceRestart', 'PowerCycle'] } } });
       }

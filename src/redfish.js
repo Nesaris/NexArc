@@ -22,6 +22,9 @@ export const ACTIONS = {
 
 function requete(base, chemin, { user, password, pin, methode = 'GET', corps = null, timeout = 20000 } = {}) {
   const u = new URL(base.replace(/\/+$/, '') + chemin);
+  // Les chemins suivants (membre d'une collection, cible d'une action) viennent
+  // de la carte : ils restent chez elle, sous /redfish/v1/, jamais ailleurs.
+  if (u.origin !== new URL(base).origin || u.username || !u.pathname.startsWith('/redfish/v1/')) throw new Error('chemin refusé : la carte désigne une autre adresse');
   if (u.protocol !== 'https:') throw new Error('schéma refusé : HTTPS exigé');
   if (!pin) throw new Error('certificat non épinglé : confirme l\'empreinte de la carte');
   if (hoteInterdit(u.hostname)) throw new Error('adresse interdite');

@@ -1271,3 +1271,14 @@ test('jeton dérivé par le Hub (VIGIE) : lit l’état et le résumé, rien d�
   const mref = refMachineParHote('poste-charges');
   assert.equal((await s.client().req('POST', `/api/machines/${mref}/jobs`, { kind: 'inventory', payload: '' }, bon)).status, 401, 'aucune action');
 });
+
+test('Redfish : un chemin donné par la carte reste chez elle (ni autre hôte, ni identifiants dans l’adresse)', async () => {
+  const redfish = await import('../src/redfish.js');
+  for (const membre of ['@127.0.0.2:1/redfish/v1/Systems/1', '//127.0.0.2/redfish/v1/Systems/1', '/../../autre']) {
+    const carte = await fauxRedfish({ membre });
+    try {
+      const vu = await observer('127.0.0.1', Number(new URL(carte.url).port));
+      await assert.rejects(redfish.etat(carte.url, { user: 'root', password: 'motdepasse-carte', pin: { fp: vu.fp, pem: vu.pem } }), /chemin refusé/, membre);
+    } finally { await carte.fermer(); }
+  }
+});
