@@ -617,6 +617,8 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
         if (e instanceof Refus) journal.rare(`refus:${ctx.session?.compte ?? ctx.ip}:${p}`, { acteur: ctx.session?.compte ?? null, action: 'acces.refuse', objet: p, ip: ctx.ip, resultat: 'refus', details: { cause: e.message } });
         throw e;
       }
+      // Une route qui n'a pas lu ses paramètres (une branche qui rend tôt) les fait valider ici, avant de répondre.
+      if (schema && ctx.url.search && !ctx.res.headersSent) void ctx.q;
       if (reponse !== undefined) repondreJson(ctx.res, 200, reponse);
       return true;
     },

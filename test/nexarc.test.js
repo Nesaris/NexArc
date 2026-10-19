@@ -1282,3 +1282,14 @@ test('Redfish : un chemin donné par la carte reste chez elle (ni autre hôte, n
     } finally { await carte.fermer(); }
   }
 });
+
+test('paramètres : un paramètre inconnu est refusé, même quand la route rend avant de le lire', async () => {
+  // Une route d'essai qui rend sans lire ses paramètres, retirée ensuite.
+  const routes = s.api.routeur.routes;
+  s.api.routeur.get('/api/essai-parametres', ctx => { session(ctx); return { ok: true }; }, { role: 'lecture', requete: { a: { type: 'chaine', max: 4 } } });
+  function session(ctx) { if (!ctx.session) throw Object.assign(new Error('Connexion requise.'), { status: 401 }); }
+  try {
+    assert.equal((await lecteur.get('/api/essai-parametres?a=x')).status, 200);
+    assert.equal((await lecteur.get('/api/essai-parametres?a=x&script=id')).status, 400);
+  } finally { routes.pop(); }
+});
