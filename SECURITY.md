@@ -482,7 +482,7 @@ Relancé à chaque génération de ce fichier (bash, LC_ALL=C.UTF-8) ; le 2026-1
 | B.1.9 | `git log --all -p -- . ':!SECURITY.md' ':!NO-VIBE.md'` filtré par le motif « infrastructure personnelle » de l’annexe B.1, compté | `4` | le mot « cadenas » (icône de la page Sécurité) et un mot anglais d’un commentaire de noVNC, qui contiennent le motif ; aucun terme d’infrastructure |
 | B.1.10 | `git log --all --format='%aI' \| rg -v '\+00:00' \| wc -l` | `0` | tout l’historique en UTC |
 | B.1.11 | `git log --all --format='%cI' \| rg -v '\+00:00' \| wc -l` | `0` | idem pour le validateur |
-| B.1.12 | `git grep -nIE '/home/[a-z]\|/[U]sers/[A-Za-z]\|/tmp/[c]laude\|[c]laude-0\|[s]cratchpad' $(git rev-list --all) \| wc -l` | `0` | aucun chemin d’un poste ni d’un espace de travail d’outil dans aucun arbre de l’historique, relevés compris |
+| B.1.12 | `git grep` de tout l’historique (`$(git rev-list --all)`) avec le motif des chemins de poste et d’espaces de travail d’outils (gardé hors dépôt) | `0` | aucun chemin d’un poste ni d’un espace de travail d’outil dans aucun arbre de l’historique, relevés compris |
 | B.1.13 | `git log --all --name-only --format= \| sort -u \| rg -i '\.(png\|jpe?g\|pdf\|mp4\|gif\|webp\|ico)$'` | 0 ligne | aucun binaire image ou document dans tout l’historique : exiftool n’a rien à lire |
 | B.1.14 | `git log --all -p` filtré par la liste d’anonymat (hors dépôt), compté | `0` | liste d’anonymat, hors dépôt, sur tout l’historique : arbres, messages, identités |
 | B.2.1 | `gitleaks git --no-banner --redact . 2>&1 \| tail -1` | `no leaks found` | tout l’historique |
