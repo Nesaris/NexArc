@@ -1,7 +1,7 @@
 # Security compliance — NEXARC RMM
 
 Standard: Project Baseline Requirements & Security Manual, Edition 2.0 (258 controls)
-Audited: 2026-10-12   ·   Owner: Codex64   ·   Status: NON-COMPLIANT
+Audited: 2026-10-19   ·   Owner: Codex64   ·   Status: NON-COMPLIANT
 
 ## Summary
 | Part | Controls | Pass | Fail | N/A | Unknown |
@@ -45,6 +45,14 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | C24 | LOW | SEC-API-007 | * Régression de cette passe (introduite par 8f73149), relevée par le sondage : une commande libre venue du Hub, ou avec le réglage coupé, finissait en erreur interne (500) au lieu d’un refus 403. | cfebf32 |
 | C25 | LOW | REQ-DATA-005, SEC-PRIV-003 | * Runbook jamais déroulé ; notice de confidentialité muette sur les sauvegardes et l’origine des consoles. | 694d771, e63412a |
 
+Audit de suivi du 2026-10-19 sur 2.0.3 (mêmes classes de défauts que celles relevées ce jour-là dans les autres services du socle : chemins suivis sur la foi d’une réponse, paramètres lus sous condition, actions de CI en retard), corrigé en 2.0.4 :
+
+| # | Gravité | Contrôles | Constat | Commits |
+|---|---|---|---|---|
+| D1 | LOW | SEC-CSRF-004, REQ-WEB-005 | Les chemins Redfish suivants (membre d’une collection, cible d’une action) venaient de la carte et étaient collés à son adresse : un `@autre-hôte` ou un `//autre-hôte` envoyait la requête, identifiants compris, ailleurs. L’épinglage du certificat empêchait déjà la poignée de main avec un autre hôte ; ils sont désormais refusés avant toute connexion. | 73038ed |
+| D2 | LOW | REQ-WEB-006 | Une route qui rendrait sans lire ses paramètres de requête les laisserait passer : ils sont validés avant toute réponse, quelle que soit la route. | e225a9a |
+| D3 | LOW | SEC-DEP-004 | Actions de CI en retard d’une version ; trois montées proposées par Dependabot restées en demandes de fusion. | 2cf0924 |
+
 ## Control status
 | ID | Severity | Status | Evidence | Notes |
 |---|---|---|---|---|
@@ -74,7 +82,7 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | REQ-SESS-004 | HIGH | PASS | `socle/src/comptes.js:658` ; déconnexion serveur : `socle/src/portail.js:267` | les WebSockets de console revérifient la session à la mise à niveau ; runbook : `outils/exercice-incident.mjs:59` |
 | REQ-SESS-005 | HIGH | PASS | `socle/src/comptes.js:335` ; routes de NEXARC sous renfort : accès distants et secrets d’appareils, cartes, nœuds Mesh, épinglage, suppressions (`grep -c "session(ctx, { role: 'admin', renfort: true })" src/api.js` → 8), coupure d’alimentation (`src/api.js:301`), commande libre en tâche comme en automatisation (`src/api.js:364`) | essais `test/nexarc.test.js:493` et `test/nexarc.test.js:992` |
 | REQ-SESS-006 | MEDIUM | PASS | 12 h absolues, 60 min d’inactivité : `socle/src/index.js:40` | pas de JWT ; passe de console : huit heures au plus, jamais au-delà de sa session (`src/origine-consoles.js:20`) |
-| REQ-ANON-001 | CRITICAL | PASS | `git log --all --format="%an <%ae>" \| sort -u` et `--format="%cn <%ce>"` → une ligne chacun, le pseudonyme ; posée dans le dépôt : `git config --local user.name` → 1 | dépôt neuf de la version 2, commits en UTC |
+| REQ-ANON-001 | CRITICAL | PASS | `git log main --format="%an <%ae>" \| sort -u` et `--format="%cn <%ce>"` → une ligne chacun, le pseudonyme ; avec `--all`, s’y ajoutent `dependabot[bot]` et `GitHub` sur trois branches de Dependabot ouvertes sur GitHub, jamais fusionnées (montées appliquées par le pseudonyme dans `2cf0924`) : comptes de service, rien de l’auteur → H17 les ferme ; posée dans le dépôt : `git config --local user.name` → 1 | dépôt neuf de la version 2, commits en UTC |
 | REQ-ANON-002 | CRITICAL | PASS | arbre : annexe B.1 → une seule correspondance, le nom `.env.local` dans `.gitignore:10` ; aucun terme de la liste d’anonymat ; historique local complet : le motif « infrastructure personnelle » ne relève que des mots qui le contiennent (annexe B ci-dessous) | l’historique de la 1.x n’est pas dans ce dépôt : il vit sur l’ancien dépôt publié, qui expose des termes de la liste (section Anonymity) et que seul l’exploitant peut remplacer → action H12 |
 | REQ-ANON-003 | CRITICAL | FAIL | liste et crochet global à poser sur le poste de développement ; contrôle CI par secret : `.github/workflows/verification.yml:92` | action H4 |
 | REQ-ANON-004 | CRITICAL | PASS | commande de REQ-ANON-004 sur tout l’historique (`git log --all --format=%B \| grep -niE "co-authored-by\|generated with\|assistant\|claude\|copilot\|cursor\|gpt\|🤖"`) → 0 | contrôlé en CI sur chaque nouveau commit : `.github/workflows/verification.yml:70` |
@@ -104,7 +112,7 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | REQ-WEB-007 | HIGH | PASS | requêtes préparées partout ; aucun processus lancé par le serveur (`grep -rnE "child_process\|execFile\|spawn" src` → 0) ; l’agent n’appelle que des binaires fixes, arguments en liste (`agent/nexarc-agent.py:185`) ; valeurs des scripts d’inscription contrôlées par motif puis entre apostrophes (`src/enroll.js:17`) ; `innerHTML` seulement dans le gabarit du socle, sur du balisage écrit dans le code (`socle/web/gabarit.js:115`) | eval et Function absents ; la commande libre est la fonction elle-même (voir SEC-INJ-004) |
 | REQ-WEB-008 | MEDIUM | PASS | débit global par adresse `src/main.js:96`, mises à niveau WebSocket comprises (`src/main.js:121`), et sur l’origine des consoles ; flux d’activité plafonnés (`src/main.js:31`) ; automatisations bornées (`src/base.js:19`) ; tâches par 25, alertes par 500, parc par NEXARC_MAX_MACHINES ; corps bornés à 64 Kio (512 Kio pour un inventaire, lu seulement après le jeton : `src/api.js:522`) ; `?limit=100000` refusé (paramètre non déclaré) | essai `test/nexarc.test.js:309` ; aucun appel à une IA |
 | REQ-DATA-001 | CRITICAL | PASS | SQLite embarqué, aucun port : `src/base.js:38` ; dossier en 0700 et base en 0600 : `src/base.js:36` |  |
-| REQ-DATA-002 | HIGH | FAIL | secrets d’appareils et TOTP scellés AES-256-GCM : `socle/src/chiffre.js:60` ; trafic vers les cartes en TLS épinglé, Redfish en HTTPS seulement (`src/redfish.js:25`, `src/api.js:25`) | restent le chiffrement du disque des hôtes et HTTPS vers NEXARC lui-même : actions H7, H1 |
+| REQ-DATA-002 | HIGH | FAIL | secrets d’appareils et TOTP scellés AES-256-GCM : `socle/src/chiffre.js:60` ; trafic vers les cartes en TLS épinglé, Redfish en HTTPS seulement (`src/redfish.js:28`, `src/api.js:25`) | restent le chiffrement du disque des hôtes et HTTPS vers NEXARC lui-même : actions H7, H1 |
 | REQ-DATA-003 | HIGH | FAIL | sauvegarde chiffrée pour une clé publique RSA : `src/cli.js:77` ; restauration ailleurs avec la clé privée seule : `src/cli.js:23` ; restauration réelle puis démarrage sur la base restaurée : `outils/exercice-incident.mjs:90` (2026-09-30, instance d’essai) | essai `test/nexarc.test.js:267` ; planification quotidienne, copie hors hôte, trente jours de garde et restauration datée sur la VM : action H8 |
 | REQ-DATA-004 | HIGH | PASS | socle : connexions, facteurs, rôles, refus (`socle/src/portail.js:104`), verrous du limiteur ; NEXARC : refus décidés par l’API (`src/api.js:617`) et par l’origine des consoles (`src/origine-consoles.js:109`), jetons et codes de machine refusés (`src/api.js:101`), accès distants, cartes, nœuds Mesh, secrets et épinglage, alimentation, réveils (`src/api.js:355`), consoles ouvertes, automatisations, tâches, révocations et sauvegardes en ligne de commande ; jamais un secret : `socle/src/journal.js:10` | essais `test/nexarc.test.js:651`, `test/nexarc.test.js:534`, `test/nexarc.test.js:503` |
 | REQ-DATA-005 | MEDIUM | PASS | vigie : `socle/src/vigie.js:11` (connexions, refus, limites, erreurs internes), jetons et codes de machine refusés compris (`src/api.js:101`) ; runbook d’une page ci-dessous, joué de bout en bout sur une instance lancée comme en production le 2026-09-30 (`outils/exercice-incident.mjs:99`, 23 vérifications) : détection au journal, sessions fermées en une requête, commande libre et Hub coupés au redéploiement, jetons d’agents révoqués, mot de passe forcé, restauration | rotation de SOCLE_CLE jouée à part (`outils/exercice-rotation.mjs:1`) ; alertes hors de l’application par courriel : action H2 |
@@ -181,7 +189,7 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | SEC-CSRF-001 | HIGH | PASS | SameSite=Strict + origine + jeton : `socle/src/portail.js:92` appelé par chaque écriture de session | essai `test/nexarc.test.js:704` ; agents et Hub présentent un jeton en en-tête, que le navigateur n’envoie jamais seul |
 | SEC-CSRF-002 | MEDIUM | PASS | `socle/src/http.js:120` | 415 sur tout autre type |
 | SEC-CSRF-003 | MEDIUM | PASS | voir REQ-WEB-005 : tirer un code, l’échanger et relever ses tâches sont des POST | essai `test/nexarc.test.js:184` ; annexe B.4 : un GET d’échange répond 405 |
-| SEC-CSRF-004 | CRITICAL | PASS | adresses internes (consoles, cartes, Redfish, nœuds Mesh) déclarées par un administrateur sous renfort et journalisées (`src/api.js:227`) : c’est la liste des destinations admises ; métadonnées, lien local et plages réservées refusés en littéral comme à la résolution (`src/reseau.js:52`) ; Redfish en HTTPS sur certificat épinglé ; SYNAPSE à l’adresse de la configuration, sans redirection suivie (`src/synapse.js:34`) ; aucun cookie de NEXARC vers une carte (`src/proxy.js:87`) | essais `test/nexarc.test.js:1196`, `test/nexarc.test.js:585`, `test/nexarc.test.js:724` ; les cartes vivent sur le réseau interne par nature : le bouclage et les plages privées y restent permis à l’administrateur |
+| SEC-CSRF-004 | CRITICAL | PASS | adresses internes (consoles, cartes, Redfish, nœuds Mesh) déclarées par un administrateur sous renfort et journalisées (`src/api.js:227`) : c’est la liste des destinations admises ; métadonnées, lien local et plages réservées refusés en littéral comme à la résolution (`src/reseau.js:52`) ; Redfish en HTTPS sur certificat épinglé, chaque chemin donné par la carte gardé chez elle (`src/redfish.js:27`) ; SYNAPSE à l’adresse de la configuration, sans redirection suivie (`src/synapse.js:34`) ; aucun cookie de NEXARC vers une carte (`src/proxy.js:87`) | essais `test/nexarc.test.js:1196`, `test/nexarc.test.js:585`, `test/nexarc.test.js:724` ; les cartes vivent sur le réseau interne par nature : le bouclage et les plages privées y restent permis à l’administrateur |
 | SEC-CSRF-005 | HIGH | N/A | aucun webhook reçu ni envoyé vers une adresse d’utilisateur : SYNAPSE est joint à l’adresse de la configuration (`src/config.js:59`) |  |
 | SEC-CSRF-006 | MEDIUM | N/A | aucune redirection pilotée par paramètre : voir SEC-XSS-007 |  |
 | SEC-API-001 | HIGH | PASS | voir REQ-WEB-006 |  |
@@ -304,7 +312,7 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | SEC-TEST-004 | MEDIUM | FAIL | aucun passage DAST encore | ZAP en mode « baseline » contre la VM d’essai : action H14 |
 | SEC-TEST-005 | LOW | FAIL | voir REQ-WEB-001 | notation après HTTPS : action H1 |
 | SEC-TEST-006 | HIGH | PASS | voir REQ-CI-006 |  |
-| SEC-TEST-007 | LOW | PASS | sondage exploratoire du 2026-09-30, rejoué à chaque génération de ce fichier : section « Exploratory probing » ci-dessous (références devinées, objets d’un autre agent, champs et paramètres inconnus, rôles, corps géants, injections dans les scripts d’inscription, adresses internes, jetons inventés, rafales) | chaque trouvaille est devenue un essai de non-régression |
+| SEC-TEST-007 | LOW | PASS | sondage exploratoire du 2026-09-30, rejoué le 2026-10-12 ; le 2026-10-19, non rejoué en entier (son générateur vivait hors dépôt, dans un espace de travail effacé) : les deux constats de suivi ont chacun leur essai : section « Exploratory probing » ci-dessous (références devinées, objets d’un autre agent, champs et paramètres inconnus, rôles, corps géants, injections dans les scripts d’inscription, adresses internes, jetons inventés, rafales) | chaque trouvaille est devenue un essai de non-régression |
 | SEC-TEST-008 | LOW | N/A | ni argent, ni santé, ni large public : service auto-hébergé pour quelques comptes invités ; `grep -rniE "stripe\|paypal\|checkout\|invoice\|payout\|refund" src web/*.js socle/src socle/web/*.js agent` → 0 : aucun paiement |  |
 
 ## Not applicable
@@ -385,7 +393,7 @@ Relevés en lecture seule avant toute correction (« * » : relevés pendant les
 | SEC-TEST-008 | ni argent, ni santé, ni large public : service auto-hébergé pour quelques comptes invités ; `grep -rniE "stripe\|paypal\|checkout\|invoice\|payout\|refund" src web/*.js socle/src socle/web/*.js agent` → 0 : aucun paiement |
 
 ## Anonymity (REQ-ANON-001 to -010)
-Arbre de travail : 0 occurrence de la liste d’anonymat ; les motifs de l’annexe B.1 y relèvent 1 ligne, un nom de fichier du .gitignore. Historique local complet (91 commits, tous les arbres, tous les messages, auteurs et validateurs) : 0 occurrence de la liste, une seule identité, toutes les dates en UTC, aucune mention d’outil ; le motif « infrastructure personnelle » y relève 4 lignes, toutes des mots qui le contiennent. Aucun binaire image ni document dans tout l’historique. Le dépôt ne contient pas l’historique de la 1.x : l’ancien dépôt publié, relu depuis un clone hors dépôt (4 commits), porte 29 occurrences de la liste dans 11 fichiers de son dernier arbre ; son premier commit suit par erreur un dossier de construction de l’agent qui garde les chemins du poste de développement ; 4 de ses commits portent un terme de la liste, 2 identités y signent, dont une adresse provisoire, et toutes ses dates ont un décalage horaire non nul → H12, détail dans le rapport d’anonymat hors dépôt. Le balayage est fait sur motifs et sur une liste finie : il ne prouve pas l’absence de ce que la liste ne nomme pas.
+Arbre de travail : 0 occurrence de la liste d’anonymat ; les motifs de l’annexe B.1 y relèvent 1 ligne, un nom de fichier du .gitignore. Historique local complet (117 commits avec les trois branches de Dependabot de GitHub, 114 sur `main`, tous les arbres, tous les messages, auteurs et validateurs) : 0 occurrence de la liste, une seule identité sur `main` (les branches de Dependabot portent `dependabot[bot]` et `GitHub`, comptes de service → H17), toutes les dates en UTC, aucune mention d’outil ; le motif « infrastructure personnelle » y relève 4 lignes, toutes des mots qui le contiennent. Aucun binaire image ni document dans tout l’historique. Le dépôt ne contient pas l’historique de la 1.x : l’ancien dépôt publié, relu depuis un clone hors dépôt (4 commits), porte 29 occurrences de la liste dans 11 fichiers de son dernier arbre ; son premier commit suit par erreur un dossier de construction de l’agent qui garde les chemins du poste de développement ; 4 de ses commits portent un terme de la liste, 2 identités y signent, dont une adresse provisoire, et toutes ses dates ont un décalage horaire non nul → H12, détail dans le rapport d’anonymat hors dépôt. Le balayage est fait sur motifs et sur une liste finie : il ne prouve pas l’absence de ce que la liste ne nomme pas.
 
 ## Human actions required
 Ce qu’aucun agent ne peut faire à la place de l’exploitant. Cette liste bloque la mise en production tant qu’elle n’est pas vide.
@@ -408,6 +416,7 @@ Ce qu’aucun agent ne peut faire à la place de l’exploitant. Cette liste blo
 | H14 | Crible au déploiement | SEC-INFRA-004, SEC-TEST-003, SEC-TEST-004 | Sur la VM : `trivy image ghcr.io/codexx64/nexarc:2.0.0` sans CRITICAL ni HIGH corrigeable ; `zap-baseline.py -t http://<vm>:<port>` ; résultats notés ici. |
 | H15 | Relais SMTP hors UE | SEC-PRIV-006 | Si le relais SMTP choisi (H2) est un prestataire hors de l’Union européenne : accepter son accord de traitement, ou choisir un relais européen ou auto-hébergé. |
 | H16 | Clé maîtresse hors ligne | REQ-DATA-003, SEC-DB-006 | Garder une copie hors ligne de SOCLE_CLE (coffre du Hub, ou `secrets/socle_cle` installé seul), à part des sauvegardes de la base : sans elle, une sauvegarde restaurée ne déchiffre ni les secrets TOTP ni les secrets d’appareils. |
+| H17 | Branches de Dependabot | REQ-ANON-001 | Sur GitHub, fermer les trois demandes de Dependabot (setup-node 7.1.0, codeql-action init et analyze 4.38.3), déjà appliquées par `2cf0924`, et supprimer leurs branches. |
 
 Orthographe du pseudonyme : le manuel nomme l’identité « Codex64 » ; les commits, la licence et le compte GitHub portent la forme du compte, identique dans tout l’historique. Changer maintenant créerait une seconde identité dans le journal git ; à trancher par l’exploitant.
 
@@ -458,19 +467,19 @@ Tiers (tous chez l’exploitant) : les cartes de gestion et serveurs VNC déclar
 
 
 ## Appendix B sweep
-Relancé à chaque génération de ce fichier (bash, LC_ALL=C.UTF-8) ; un résultat différent de celui qui a été relu arrête la génération. B.5 est dans NO-VIBE.md.
+Relancé à chaque génération de ce fichier (bash, LC_ALL=C.UTF-8) ; le 2026-10-19, B.1 à B.3 relancés sur l’arbre de 2.0.4, B.4 (instance locale) repris du 2026-10-12, les réponses HTTP n’ayant pas changé ; un résultat différent de celui qui a été relu arrête la génération. B.5 est dans NO-VIBE.md.
 
 | # | Commande | Résultat | Justification |
 |---|---|---|---|
-| B.1.1 | `git log --all --format='%an <%ae>' \| sort -u` | `CodexX64 <CodexX64@users.noreply.github.com>` | le pseudonyme seul |
-| B.1.2 | `git log --all --format='%cn <%ce>' \| sort -u` | `CodexX64 <CodexX64@users.noreply.github.com>` | le pseudonyme seul |
+| B.1.1 | `git log --all --format='%an <%ae>' \| sort -u` | `CodexX64 <CodexX64@users.noreply.github.com>` ; `dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>` | le pseudonyme seul sur `main` ; le compte de service de Dependabot sur ses trois branches ouvertes sur GitHub → H17 |
+| B.1.2 | `git log --all --format='%cn <%ce>' \| sort -u` | `CodexX64 <CodexX64@users.noreply.github.com>` ; `GitHub <noreply@github.com>` | idem : GitHub valide les commits de Dependabot → H17 |
 | B.1.3 | `git log --all --format='%B' \| rg -in 'co-authored-by\|generated (by\|with)\|assistant\|as an ai'` | 0 ligne |  |
 | B.1.4 | `find . -path ./node_modules -prune -o \( -name .ai -o -name .cursor -o -name .aider -o -name .continue -o -name .windsurfrules \) -print` | 0 ligne |  |
 | B.1.5 | `find . -path ./node_modules -prune -o -regextype posix-extended -regex '.*/(CLAUDE\|AGENTS?\|PROMPTS?\|GEMINI)\.md' -print` | 0 ligne |  |
 | B.1.6 | `git log --all --name-only --format= \| sort -u \| rg -i '(^\|/)(CLAUDE\|AGENTS?\|PROMPTS?\|GEMINI)\.md$\|copilot-instructions\|\.cursor\|\.aider'` | 0 ligne | aucun fichier de consignes d’outil dans tout l’historique |
 | B.1.7 | `rg -n 'copilot-instructions' . -g '!SECURITY.md' -g '!NO-VIBE.md'` | 0 ligne |  |
 | B.1.8 | `git grep -nIiE` avec le motif « personal infrastructure, paths and networks » de l’annexe B.1, hors des deux fichiers de conformité | 1 ligne | le nom de fichier `.env.local` du .gitignore |
-| B.1.9 | `git log --all -p` filtré par le motif « infrastructure personnelle » de l’annexe B.1, compté | `4` | le mot « cadenas » (icône de la page Sécurité) et un mot anglais d’un commentaire de noVNC, qui contiennent le motif ; aucun terme d’infrastructure |
+| B.1.9 | `git log --all -p -- . ':!SECURITY.md' ':!NO-VIBE.md'` filtré par le motif « infrastructure personnelle » de l’annexe B.1, compté | `4` | le mot « cadenas » (icône de la page Sécurité) et un mot anglais d’un commentaire de noVNC, qui contiennent le motif ; aucun terme d’infrastructure |
 | B.1.10 | `git log --all --format='%aI' \| rg -v '\+00:00' \| wc -l` | `0` | tout l’historique en UTC |
 | B.1.11 | `git log --all --format='%cI' \| rg -v '\+00:00' \| wc -l` | `0` | idem pour le validateur |
 | B.1.12 | `git grep -nIE '/home/[a-z]\|/[U]sers/[A-Za-z]\|/tmp/[c]laude\|[c]laude-0\|[s]cratchpad' $(git rev-list --all) \| wc -l` | `0` | aucun chemin d’un poste ni d’un espace de travail d’outil dans aucun arbre de l’historique, relevés compris |
@@ -478,7 +487,7 @@ Relancé à chaque génération de ce fichier (bash, LC_ALL=C.UTF-8) ; un résul
 | B.1.14 | `git log --all -p` filtré par la liste d’anonymat (hors dépôt), compté | `0` | liste d’anonymat, hors dépôt, sur tout l’historique : arbres, messages, identités |
 | B.2.1 | `gitleaks git --no-banner --redact . 2>&1 \| tail -1` | `no leaks found` | tout l’historique |
 | B.2.2 | `gitleaks dir --no-banner --redact . 2>&1 \| tail -1` | `no leaks found` | arbre de travail |
-| B.2.3 | `git grep -nIiE '(api[_-]?key\|secret\|token\|password\|bearer)\s*[=:]\s*["'"'"'][^"'"'"']{8,}' -- . ':!SECURITY.md' ':!NO-VIBE.md'` | 7 lignes | mots de passe de cartes fabriqués pour les essais et l’exercice de rotation, vecteur publié de la RFC 6238 ; aucune vraie clé |
+| B.2.3 | `git grep -nIiE '(api[_-]?key\|secret\|token\|password\|bearer)\s*[=:]\s*["'"'"'][^"'"'"']{8,}' -- . ':!SECURITY.md' ':!NO-VIBE.md'` | 8 lignes | mots de passe de cartes fabriqués pour les essais (dont celui de l’essai des chemins Redfish) et l’exercice de rotation, vecteur publié de la RFC 6238 ; aucune vraie clé |
 | B.2.4 | `git grep -nI -e '-----BEGIN (RSA\|EC\|OPENSSH\|PGP) PRIVATE' -- . ':!SECURITY.md' ':!NO-VIBE.md'` | 0 ligne |  |
 | B.2.5 | `rg -ni 'sk_live\|service_role\|xox[baprs]-\|-----BEGIN' web socle/web` | 0 ligne | aucune étape de construction : le navigateur reçoit web/ et socle/web tels quels |
 | B.2.6 | `curl -s -o /dev/null -w '%{http_code}' http://localhost:18142/.env` | `404` | instance locale ; tout segment caché répond 404 |
@@ -511,7 +520,7 @@ Chaque ligne rendue par la commande B.3 correspondante, avec sa justification ; 
 | `src/tls.js:44` | la sonde `observer()` de confiance au premier usage, seule connexion du serveur sans vérification par autorité | bornée par trois garanties écrites au-dessus d’elle et essayées : (1) atteinte seulement par `GET` et `POST /api/machines/:ref/pin`, administrateur sous renfort récent ; (2) aucune donnée applicative envoyée, socket fermée dès la poignée finie ; (3) ne rend que l’empreinte SHA-256 et le sujet, le certificat n’étant gardé qu’après confirmation de l’empreinte montrée (le POST revérifie qu’elle n’a pas changé). Toute connexion d’exploitation passe par `agentEpingle()` : `rejectUnauthorized: true`, certificat épinglé pour seule autorité, feuille exactement épinglée. Essais « sonde TLS : admin + renfort seulement, aucun octet applicatif, empreinte et sujet seuls » et « épinglage TLS : le certificat épinglé passe, une empreinte différente est refusée » |
 
 ## Exploratory probing (SEC-TEST-007)
-Sondage exploratoire du 2026-09-30, rejoué à chaque génération de ce fichier sur une instance neuve (vrais comptes, vrais agents, carte simulée, origine des consoles) : 40 cas d’abus tentés, chacun avec la réponse obtenue et celle qu’exige la règle ; un seul écart arrête la génération. Chaque trouvaille de ce sondage est devenue un essai (constats marqués « * »).
+Sondage exploratoire du 2026-09-30, rejoué le 2026-10-12 (pas le 2026-10-19 : voir SEC-TEST-007) sur une instance neuve (vrais comptes, vrais agents, carte simulée, origine des consoles) : 40 cas d’abus tentés, chacun avec la réponse obtenue et celle qu’exige la règle ; un seul écart arrête la génération. Chaque trouvaille de ce sondage est devenue un essai (constats marqués « * »).
 
 | # | Cas d’abus | Tenté | Obtenu | Attendu |
 |---|---|---|---|---|
