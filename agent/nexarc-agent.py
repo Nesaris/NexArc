@@ -340,7 +340,8 @@ _MAJ_EN_ATTENTE = [0]
 
 def collect(site, name='', relais=False):
     p = {
-        'hostname': (name or socket.gethostname())[:80],
+        # Le nom d'hôte réel : le nom donné à l'inscription est déjà connu de la console.
+        'hostname': socket.gethostname()[:80],
         'ip': local_ip(), 'os': os_label(), 'oskind': oskind(),
         'role': 'relais' if relais else 'poste', 'site': site,
         'cpu': int(psutil.cpu_percent(interval=1)), 'ram': int(psutil.virtual_memory().percent),
@@ -816,7 +817,7 @@ def bootstrap(a):
     try:
         r = sess.post(cfg['url'] + '/api/ingest', json=payload, headers=headers, timeout=60)
         if r.status_code != 200:
-            sys.exit('la console a répondu %s' % r.status_code)
+            sys.exit('la console a répondu %s : %s' % (r.status_code, r.text[:200]))
     except requests.RequestException as e:
         sys.exit('console injoignable : %s' % e)
     print('→ Installation du service')
