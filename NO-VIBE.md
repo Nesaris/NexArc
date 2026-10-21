@@ -143,6 +143,9 @@ Commits de la passe :
 ## Suivi du 2026-10-19 (2.0.4)
 Trois commits de correction, chacun un sujet : chemins Redfish gardés chez la carte (`73038ed`), paramètres de requête validés avant toute réponse (`e225a9a`), actions de CI montées (`2cf0924`). Base : `v2.0.3`, 46 essais du service, 67 du socle et 23 de l’agent, verts ; arbre final : 48, 67 et 23, verts. Surface publique inchangée (mêmes routes, mêmes schémas). Cassures volontaires : retirer le contrôle d’origine des chemins Redfish fait échouer « Redfish : un chemin donné par la carte reste chez elle » ; retirer la validation après le gestionnaire fait échouer « paramètres : un paramètre inconnu est refusé ». Balayage B.5 relancé sur les fichiers touchés : aucun marqueur, aucun nom générique, aucun `catch` nouveau.
 
+## Suivi du 2026-10-21 (2.0.5)
+Deux commits, un sujet chacun : motif du nom remonté aligné sur celui de l'inscription, agent qui envoie son nom d'hôte réel. Surface publique inchangée (même route, même schéma, motif élargi au seul jeu de caractères déjà admis à l'inscription). 48 essais du service et 23 de l'agent, verts.
+
 ## Verification (chapter 49)
 - [x] Full suite passes and matches the baseline — les 109 essais de la référence, verts avant et après la passe, plus 21 ajoutés depuis (130 en tout), relancés à la génération de ce fichier
 - [x] Public API diff empty — inventaire de la surface publique identique sur la passe ; depuis, le renommage du service et des ajouts déclarés, aucun retrait
