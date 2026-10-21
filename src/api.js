@@ -17,6 +17,10 @@ import * as enroll from './enroll.js';
 import { MAX_AUTOMATISATIONS, REF } from './base.js';
 
 const NOM_HOTE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/;
+// Nom remonté par un agent : son nom d'hôte, ou le nom donné à l'inscription
+// (« MacBook Pro ») que les agents jusqu'à 2.0.4 envoient à sa place. Mêmes
+// caractères que ce nom (enroll.controler) : lettres, chiffres, espace, . _ ( ) -.
+const NOM_POSTE = /^[\p{L}\p{N}](?:[\p{L}\p{N} ._()-]{0,78}[\p{L}\p{N}.)])?$/u;
 
 // Un refus d'accès décidé ici plutôt que par le socle : l'aiguillage le
 // journalise comme le socle journalise les siens.
@@ -28,7 +32,7 @@ const refus = message => { throw new Refus(403, message); };
 const S = {
   // Remontée d'un agent : bornée par schéma (champ inconnu refusé, tailles bornées).
   ingest: {
-    hostname: { type: 'chaine', requis: true, max: 80, motif: NOM_HOTE },
+    hostname: { type: 'chaine', requis: true, max: 80, motif: NOM_POSTE },
     ip: { type: 'chaine', max: 45 }, os: { type: 'chaine', max: 60 }, oskind: { type: 'chaine', parmi: ['win', 'lin', 'mac', 'srv'], defaut: 'win' },
     role: { type: 'chaine', max: 40 }, site: { type: 'chaine', max: 40, defaut: 'Agents' },
     cpu: { type: 'entier', min: 0, max: 100, defaut: 0 }, ram: { type: 'entier', min: 0, max: 100, defaut: 0 }, disk: { type: 'entier', min: 0, max: 100, defaut: 0 },

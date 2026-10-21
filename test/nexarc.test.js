@@ -215,6 +215,9 @@ test('agent : code d\'inscription à usage unique, remontée, relève et résult
   const jeton = conf.token;
   const remonter = h => membre.req('POST', '/api/ingest', { hostname: h, ip: '198.51.100.20', oskind: 'lin', cpu: 5, ram: 10, disk: 20, av: 'à jour', fw: 'actif', enc: 'LUKS actif', patch: 0 }, { entetes: { 'x-agent-token': jeton }, origine: null });
   assert.equal((await remonter('poste-un')).status, 200);
+  // Le nom donné à l'inscription, espace compris, tel que l'envoient les agents jusqu'à 2.0.4 (macOS : « MacBook Pro »).
+  assert.equal((await remonter('MacBook Pro')).status, 200);
+  for (const h of ['a;b', 'a$b', "a'b", ' devant', 'x'.repeat(81)]) assert.equal((await remonter(h)).status, 400, h);
   const mref = refMachineParHote('poste-un');
   // une tâche pour cet agent
   const t = await membre.post(`/api/machines/${mref}/jobs`, { kind: 'inventory' });
