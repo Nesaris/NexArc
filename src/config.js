@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import { lireConfig } from '../socle/src/index.js';
 
-export const VERSION = '2.0.4';
+export const VERSION = '2.0.5';
 
 export function lireConfigNexarc(env = process.env) {
   // SOCLE_CLE_FILE posée dit « la clé vient d'un secret » : un fichier vide ne
