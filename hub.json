@@ -331,7 +331,8 @@
     ],
     "requires": [],
     "accepts": [
-      "memory.learn"
+      "memory.learn",
+      "network.wake"
     ]
   },
   "triggers": [],

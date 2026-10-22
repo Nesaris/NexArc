@@ -20,11 +20,10 @@ services:
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 256
-    # Réveil réseau en émission directe (NEXARC_HOST_NET) : il faut alors le
-    # réseau de l'hôte, ce qui ouvre le conteneur au réseau local — désactivé par
-    # défaut. Sans lui, NEXARC réveille via un agent relais du même segment, ce
-    # qui suffit et n'exige aucun privilège réseau : c'est pourquoi on garde le
-    # réseau du Hub, isolé, plutôt que celui de l'hôte.
+    # Réveil réseau : NEXARC reste sur le réseau du Hub, isolé. Le paquet
+    # magique part de MapMyLAN (réseau de l'hôte) quand il est installé, ou d'un
+    # agent relais du même segment ; l'émission directe (NEXARC_HOST_NET) demande
+    # le réseau de l'hôte et reste désactivée.
     logging:
       driver: json-file
       options:
@@ -75,6 +74,10 @@ services:
       # jeton est un jeton de cerveau dérivé par le Hub, pour ce seul service.
       SYNAPSE_URL: "{{provider.memory.learn.url}}"
       SYNAPSE_JETON: "{{provider.memory.learn.jetonCerveau}}"
+      # MapMyLAN, sur le réseau local : il diffuse le paquet magique pour
+      # NEXARC (poste éteint, aucun relais). Jeton dérivé pour NEXARC seul.
+      NEXARC_REVEIL_URL: "{{provider.network.wake.url}}"
+      NEXARC_REVEIL_JETON: "{{provider.network.wake.jetonCerveau}}"
 
 networks:
   hub:
