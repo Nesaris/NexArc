@@ -95,6 +95,41 @@ for (const [onglet, nom] of [['macOS', 'inscription-macos'], ['Linux', 'inscript
 }
 await page.getByRole('dialog').getByRole('button', { name: 'Fermer' }).click();
 
+// Parcs : la liste (le site « Prod » du poste semé y est), un parc créé, puis
+// « Ajouter un poste » depuis ce parc le préremplit ; le parc se change par
+// la fenêtre de choix avec recherche, où Échap ne ferme qu'elle.
+await page.locator('.rail').getByRole('button', { name: 'Parcs', exact: true }).click();
+await page.getByRole('heading', { name: 'Parcs', exact: true }).waitFor();
+await page.locator('tbody tr', { hasText: 'Prod' }).first().waitFor();
+await controle('parcs');
+await page.getByRole('button', { name: 'Créer un parc' }).click();
+await page.getByRole('dialog').getByLabel('Nom du parc').fill('Bureau');
+await page.getByRole('dialog').getByRole('button', { name: 'Créer', exact: true }).click();
+await page.getByRole('heading', { name: 'Bureau', exact: true }).waitFor();
+await controle('parc');
+await page.getByRole('button', { name: 'Ajouter un poste' }).click();
+const inscription = page.getByRole('dialog', { name: 'Ajouter un poste' });
+await inscription.getByRole('button', { name: 'Choisir le parc' }).filter({ hasText: 'Bureau' }).waitFor();
+await inscription.locator('pre.cmd', { hasText: 'site=Bureau' }).waitFor();
+await inscription.getByRole('button', { name: 'Choisir le parc' }).click();
+const choix = page.getByRole('dialog', { name: 'Choisir un parc' });
+await choix.getByRole('option', { name: /Prod/ }).waitFor();
+await controle('choix-parc');
+await page.keyboard.press('Escape');
+await choix.waitFor({ state: 'detached' });
+await inscription.waitFor();
+await inscription.getByRole('button', { name: 'Choisir le parc' }).click();
+await choix.getByLabel('Chercher un parc').fill('Atelier');
+await choix.getByRole('option', { name: /Créer « Atelier »/ }).click();
+await inscription.locator('pre.cmd', { hasText: 'site=Atelier' }).waitFor();
+await inscription.getByRole('button', { name: 'Choisir le parc' }).click();
+await choix.getByLabel('Chercher un parc').fill('pro');
+const proposes = await choix.getByRole('option').allTextContents();
+if (proposes.length !== 2 || !proposes[0].startsWith('Prod') || !proposes[1].startsWith('Créer « pro »')) throw new Error(`la recherche ne filtre pas les parcs : ${proposes.join(' | ')}`);
+await page.keyboard.press('Enter');
+await inscription.locator('pre.cmd', { hasText: 'site=Prod' }).waitFor();
+await inscription.getByRole('button', { name: 'Fermer' }).click();
+
 const defauts = rapport.filter(r => r.defauts.length);
 fs.writeFileSync(`${sortie}/rapport.json`, JSON.stringify({ rapport, erreurs }, null, 2));
 console.log(`écrans×largeurs contrôlés : ${rapport.length}, avec défauts : ${defauts.length}, erreurs console : ${erreurs.length}`);

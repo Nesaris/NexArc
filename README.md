@@ -12,10 +12,15 @@ Projet [CodexX64](https://github.com/CodexX64). Licence MIT.
   (CPU, RAM, disque), sa posture (antivirus, pare-feu, chiffrement, correctifs),
   son inventaire matériel, ses logiciels et ses mises à jour en attente. Un
   tableau de bord, une fiche par machine, un fil d'activité en direct.
+- **Parcs** : les postes se rangent par parc (un site, un client, un VLAN). On
+  crée un parc, on l'ouvre et « Ajouter un poste » y range le poste inscrit ;
+  partout ailleurs, le parc se choisit dans une fenêtre avec recherche, qui
+  crée aussi un parc au nom tapé. Renommer ou supprimer (vide) un parc revient
+  à un administrateur.
 - **Tâches distantes** : inventaire à la demande, installation, désinstallation,
   mise à jour, réveil, et — réservée aux administrateurs, sous confirmation
   récente — la commande libre. L'agent ne relève et ne rend que **ses** tâches.
-- **Automatisations** : une tâche répétée sur un groupe (tout le parc, un site,
+- **Automatisations** : une tâche répétée sur un groupe (tout le parc, un parc,
   un système, un hôte), à intervalle ou à heure fixe. Une commande libre
   répétée suit les mêmes règles que la commande libre ; supprimer une
   automatisation revient à un administrateur.
@@ -216,8 +221,8 @@ docker run --rm -v <volume>:/data busybox chown -R 10001:10001 /data
 
 ## Agents
 
-Un agent s'installe par un **code d'inscription** à usage unique, lié à un site
-et à une durée courte, créé depuis la page Postes (« Ajouter un poste »). Le
+Un agent s'installe par un **code d'inscription** à usage unique, lié à un parc
+et à une durée courte, créé depuis la page Postes ou depuis un parc (« Ajouter un poste »). Le
 script proposé installe Python dans un environnement virtuel, télécharge
 l'agent et l'enrôle : l'agent échange le code contre **son** jeton, l'écrit
 avec sa configuration en `0600`, et se pose en service.
@@ -260,7 +265,7 @@ Sur chaque système, les dépendances de l'agent s'installent aux versions de
 vérifié par son empreinte SHA-256 avant d'être installé (`pip install
 --require-hashes`), jamais « la dernière version publiée ».
 
-Le site et le nom saisis sont contrôlés (lettres, chiffres, espace, point,
+Le parc et le nom saisis sont contrôlés (lettres, chiffres, espace, point,
 tiret, parenthèses) avant d'entrer dans un script exécuté en root ou SYSTEM.
 
 L'agent (`agent/nexarc-agent.py`, Python 3, `psutil` et `requests`) :
