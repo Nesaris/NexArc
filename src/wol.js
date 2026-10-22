@@ -37,6 +37,26 @@ export function diffusionDirigee(ip) {
   return sub ? `${sub}.255` : '';
 }
 
+// Réveil confié à MapMyLAN (POST /api/reveil, jeton dérivé) : rend la raison
+// d'un refus en une ligne, jamais la réponse brute.
+export async function reveilParMapmylan(url, jeton, mac, { fetch: f = fetch, delaiMs = 8000 } = {}) {
+  const normalisee = normaliserMac(mac);
+  if (!url || !jeton || !normalisee) return { ok: false, raison: 'non relié' };
+  try {
+    const r = await f(new URL('/api/reveil', url), {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(delaiMs),
+      headers: { authorization: `Bearer ${jeton}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ mac: normalisee }),
+    });
+    if (r.ok) return { ok: true };
+    if (r.status === 404) return { ok: false, raison: 'MAC jamais vue par MapMyLAN' };
+    if (r.status === 401 || r.status === 403) return { ok: false, raison: 'jeton refusé par MapMyLAN' };
+    return { ok: false, raison: `MapMyLAN a répondu ${r.status}` };
+  } catch {
+    return { ok: false, raison: 'MapMyLAN injoignable' };
+  }
+}
+
 // Émission locale (seulement si le conteneur est sur le réseau de l'hôte).
 export function emettre(mac, { diffusion = '255.255.255.255', ports = [9, 7] } = {}) {
   return new Promise((resolve, reject) => {

@@ -10,7 +10,7 @@ import { ErreurHttp, Routeur, Debit, lireCorps, valider, repondreJson, egal } fr
 import { DEMANDES, CIBLES, chargeRefusee } from './taches.js';
 import { TYPES, typesPublics, normaliser, cibleInterdite } from './consoles.js';
 import { nodeValide, urlBureau } from './mesh.js';
-import { sousReseau, diffusionDirigee, emettre } from './wol.js';
+import { sousReseau, diffusionDirigee, emettre, reveilParMapmylan } from './wol.js';
 import { observer, empreinte } from './tls.js';
 import * as redfish from './redfish.js';
 import * as enroll from './enroll.js';
@@ -347,7 +347,12 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
     if (cfg.reseauHote) {
       try { await emettre(mac); if (bcast) await emettre(mac, { diffusion: bcast }); methodes.push('diffusion serveur'); } catch { /* le bridge Docker avale le paquet : les relais prennent le relais */ }
     }
-    const now = Date.now() / 1000;
+    // MapMyLAN, sur le réseau local : le chemin d'un poste éteint sans relais.
+    let refusMapmylan = '';
+    if (cfg.reveilUrl && cfg.reveilJeton) {
+      const r = await reveilParMapmylan(cfg.reveilUrl, cfg.reveilJeton, mac);
+      if (r.ok) methodes.push('MapMyLAN'); else refusMapmylan = r.raison;
+    }
     const candidats = db.prepare("SELECT id, ip, host, role, last_report FROM machines WHERE source = 'agent' AND id <> ?").all(m.id)
       .filter(a => parc.enLigne(a.last_report) && sousReseau(a.ip) === cible)
       .sort((a, b) => (a.role !== 'relais') - (b.role !== 'relais'));
@@ -355,7 +360,9 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
       taches.creer(a.id, { kind: 'wol', payload, auteur: hub ? 'hub' : s.compteLigne.identifiant, auteurCompte: hub ? null : s.compte });
       methodes.push(`${a.role === 'relais' ? 'relais' : 'poste'} ${a.host}`);
     }
-    if (!methodes.length) throw new ErreurHttp(409, 'Aucun relais en ligne sur ce segment. Ajoute un nœud relais (ex. Raspberry Pi) dans ce VLAN.');
+    if (!methodes.length) throw new ErreurHttp(409, refusMapmylan
+      ? `Réveil impossible : ${refusMapmylan}, et aucun relais en ligne sur ce segment.`
+      : 'Aucun relais en ligne sur ce segment : installe MapMyLAN depuis le Hub (il réveille les postes du réseau local), ou ajoute un nœud relais dans ce VLAN.');
     journal.ecrire({ acteur: hub ? 'hub' : ctx.session.compte, action: 'reveil', objet: m.host, ip: ctx.ip, details: { methodes: methodes.length } });
     synapse?.reveil(m.host, methodes);
     return { ok: true, mac, methods: methodes };

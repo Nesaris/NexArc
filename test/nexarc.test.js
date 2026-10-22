@@ -17,7 +17,7 @@ import { lookupGarde, hoteInterdit } from '../src/reseau.js';
 import { pont } from '../src/vncbridge.js';
 import { observer, agentEpingle, empreinte } from '../src/tls.js';
 import { connecter, Connexion } from '../src/websocket.js';
-import { emettre, diffusionDirigee, sousReseau } from '../src/wol.js';
+import { emettre, diffusionDirigee, sousReseau, reveilParMapmylan } from '../src/wol.js';
 import { urlBureau, nodeValide } from '../src/mesh.js';
 import https from 'node:https';
 
@@ -484,6 +484,37 @@ test('réveil réseau : paquet magique bien formé et capturé ; sans relais en 
   const idRelais = s.parc.idDe(refMachineParHote('relais-a'));
   assert.deepEqual({ ...s.parc.db.prepare("SELECT kind, payload FROM taches WHERE machine_id = ? AND kind = 'wol'").get(idRelais) }, { kind: 'wol', payload: '01:23:45:67:89:ab|198.51.100.255' });
   assert.equal(s.parc.db.prepare("SELECT COUNT(*) n FROM socle_journal WHERE action = 'reveil' AND objet = 'poste-a-reveiller'").get().n, 1, 'réveil journalisé');
+});
+
+test('réveil réseau : sans relais, le paquet part de MapMyLAN (jeton dérivé, MAC seule) ; ses refus sont dits', async () => {
+  const recu = [];
+  let statut = 200;
+  const mml = http.createServer((req, res) => {
+    let corps = ''; req.on('data', d => { corps += d; });
+    req.on('end', () => { recu.push({ methode: req.method, chemin: req.url, auth: req.headers.authorization, corps: JSON.parse(corps || '{}') }); res.writeHead(statut, { 'content-type': 'application/json' }); res.end('{}'); });
+  });
+  await new Promise(ok => mml.listen(0, '127.0.0.1', ok));
+  const url = `http://127.0.0.1:${mml.address().port}`, JETON = 'cer_nexarc_' + 'b'.repeat(64);
+  const x = await lancer(fs.mkdtempSync(path.join(os.tmpdir(), 'nexarc-reveil-')), { NEXARC_REVEIL_URL: url, NEXARC_REVEIL_JETON: JETON });
+  try {
+    const c = x.client(), hub = { entetes: { authorization: `Bearer ${JETON_HUB}` } };
+    const { code } = x.agents.nouveauCode({ nom: 'poste-eteint' });
+    const jeton = (await c.post('/api/enroll/config', { code }, { origine: null })).json.token;
+    assert.equal((await c.req('POST', '/api/ingest', { hostname: 'poste-eteint', ip: '203.0.113.20', oskind: 'win', cpu: 1, ram: 1, disk: 1, inventory: { nics: [{ name: 'Ethernet', ip: '203.0.113.20', mac: 'AA-BB-CC-00-00-20' }] } }, { entetes: { 'x-agent-token': jeton }, origine: null })).status, 200);
+    const ref = x.db.prepare('SELECT ref FROM machines WHERE host = ?').get('poste-eteint').ref;
+    const r = await c.req('POST', `/api/machines/${ref}/wake`, {}, hub);
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual(r.json.methods, ['MapMyLAN'], 'aucun relais sur 203.0.113.0/24 : MapMyLAN seul');
+    assert.deepEqual(recu.at(-1), { methode: 'POST', chemin: '/api/reveil', auth: `Bearer ${JETON}`, corps: { mac: 'aa:bb:cc:00:00:20' } });
+    statut = 404;
+    const refus = await c.req('POST', `/api/machines/${ref}/wake`, {}, hub);
+    assert.equal(refus.status, 409);
+    assert.match(refus.json.error, /MAC jamais vue par MapMyLAN/);
+    statut = 500;
+    assert.deepEqual(await reveilParMapmylan(url, JETON, 'aa:bb:cc:00:00:20'), { ok: false, raison: 'MapMyLAN a répondu 500' });
+    assert.deepEqual(await reveilParMapmylan('http://127.0.0.1:1', JETON, 'aa:bb:cc:00:00:20', { delaiMs: 500 }), { ok: false, raison: 'MapMyLAN injoignable' });
+    assert.deepEqual(await reveilParMapmylan(url, JETON, 'pas-une-mac'), { ok: false, raison: 'non relié' });
+  } finally { await x.arreter(); await new Promise(ok => mml.close(ok)); }
 });
 
 test('consoles : mot de passe VNC scellé (admin+renfort), jamais rendu ; la cible du pont est côté serveur', async () => {

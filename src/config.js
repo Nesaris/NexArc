@@ -58,6 +58,11 @@ export function lireConfigNexarc(env = process.env) {
     // Intégration SYNAPSE : la mémoire du parc. Sans URL ni jeton, rien ne part.
     synapseUrl: { env: 'SYNAPSE_URL', type: 'url' },
     synapseJeton: { env: 'SYNAPSE_JETON', type: 'secret', min: 24 },
+    // MapMyLAN, sur le réseau local (réseau de l'hôte) : il diffuse le paquet
+    // magique pour NEXARC, qui reste isolé sur le réseau du Hub. Jeton dérivé
+    // par le Hub pour NEXARC seul ; MapMyLAN ne réveille qu'une MAC qu'il connaît.
+    reveilUrl: { env: 'NEXARC_REVEIL_URL', type: 'url' },
+    reveilJeton: { env: 'NEXARC_REVEIL_JETON', type: 'secret', min: 24 },
     // Origine des consoles web (origine-consoles.js) : l'adresse que les
     // navigateurs joignent, et le port où elle écoute. Sans adresse, l'interface
     // d'une carte s'ouvre dans un nouvel onglet, directement sur la carte.
