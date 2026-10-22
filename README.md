@@ -33,6 +33,12 @@ Projet [CodexX64](https://github.com/CodexX64). Licence MIT.
   jamais le serveur), interfaces d'administration hors bande (iDRAC, iLO, IPMI,
   JetKVM, hyperviseurs…) servies par un proxy inverse qui filtre en-têtes et
   cookies, sous une origine à part, bureau distant MeshCentral.
+  Deux pleins écrans (écran entier, avec tout le clavier pour la machine sous
+  Chrome et Edge ; ou dans la fenêtre), barre cachée que la souris gardée
+  trois secondes au bord gauche fait revenir. Console VNC : menu Actions
+  (Ctrl+Alt+Suppr, Super, Alt+Tab, Échap, Impr. écran, copier, coller en
+  tapant le presse-papiers, taper un texte), et sur Mac ⌘ + touche envoyé en
+  Ctrl + touche, ⌘ seul en Super.
 - **Alimentation Redfish** : lecture de l'état, allumage (membre), arrêt,
   extinction forcée, redémarrage et cycle (administrateur, confirmation
   récente), sur une carte de gestion au certificat épinglé.
@@ -156,7 +162,8 @@ bout en bout), `node outils/exercice-incident.mjs` (runbook d'incident joué sur
 une instance lancée comme en production : détection, sessions fermées,
 commande libre et Hub coupés, jetons d'agents révoqués, mot de passe forcé,
 sauvegarde restaurée), `node outils/parcours-navigateur.mjs <url> <jeton> [dossier]`
-(parcours dans Chromium, sept largeurs, avec Playwright).
+(parcours dans Chromium, sept largeurs, avec Playwright), `node outils/parcours-ecran.mjs`
+(écran distant contre un faux serveur VNC : touches envoyées, barre cachée, quatre largeurs).
 
 ## Sauvegardes
 
