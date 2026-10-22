@@ -17,10 +17,12 @@ import { OrigineConsoles } from './origine-consoles.js';
 import { verifierUpgrade, accepter, refuser } from './websocket.js';
 import {
   Debit, ErreurHttp, demarrerSocle, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
-  repondreErreur, repondreJson, servirFichier, origineDe, adresseClient,
+  repondreErreur, repondreJson, servirFichier, origineDe, adresseClient, GAMMES,
 } from '../socle/src/index.js';
+import fs from 'node:fs';
 
 const RACINE = path.resolve(import.meta.dirname, '..');
+const PAGE = fs.readFileSync(path.join(RACINE, 'web', 'index.html'), 'utf8').replaceAll('__VERSION__', encodeURIComponent(VERSION));
 const CONSOLE = { info: (...a) => console.log(...a), warn: (...a) => console.warn(...a), error: (...a) => console.error(...a) };
 // Signalement privé d'une faille, sur le dépôt : lu par le mainteneur.
 const CONTACT_SECURITE = 'https://github.com/CodexX64/nexarc/security/advisories/new';
@@ -109,6 +111,14 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) return repondreJson(res, 405, { error: 'Méthode non admise.' });
       if (url.pathname.startsWith('/socle/') && servirFichier(req, res, path.join(RACINE, 'socle', 'web'), url.pathname.slice(6), { nonce, cache: 'public, max-age=3600' })) return;
       const fichier = url.pathname === '/' ? '/index.html' : url.pathname;
+      // La page porte la version dans l'adresse de ses fichiers : un relais qui
+      // impose sa durée de cache au navigateur (Cloudflare) ne sert jamais
+      // l'interface d'avant après une mise à jour. La page elle-même : no-store.
+      if (fichier === '/index.html') {
+        const html = PAGE.replaceAll('__NONCE__', nonce).replaceAll('__GAMME__', GAMMES.includes(socle.cfg.gamme) ? socle.cfg.gamme : 'soma');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(html) });
+        return res.end(req.method === 'HEAD' ? undefined : html);
+      }
       if (servirFichier(req, res, path.join(RACINE, 'web'), fichier, { nonce, gamme: socle.cfg.gamme })) return;
       repondreJson(res, 404, { error: 'Introuvable.' });
     } catch (e) { repondreErreur(res, e, { journal: log }); }

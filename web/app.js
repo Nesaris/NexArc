@@ -7,7 +7,6 @@ import {
   Api, porte, pageSecurite, pageComptes, h, icone, basculeTheme, appliquerTheme,
   toast, confirmer, dialogue, feuille, ajouterPictos,
 } from '/socle/compte.js';
-import { ouvrirCadreDistant, ouvrirVncDistant } from '/ecran-distant.js';
 
 appliquerTheme();
 const SERVICE = 'NEXARC';
@@ -657,10 +656,12 @@ async function ouvrirConsole(m, idx) {
 
 // La fenêtre d'une console : pleins écrans, barre cachée, menu des touches
 // et du presse-papiers (VNC), comme l'écran de ProxLab.
-function ouvrirCadre(url, titre) { ouvrirCadreDistant(url, titre); }
+// Chargée à la même version que cette page (voir index.html).
+const ecranDistant = () => import(`/ecran-distant.js${new URL(import.meta.url).search}`);
+async function ouvrirCadre(url, titre) { (await ecranDistant()).ouvrirCadreDistant(url, titre); }
 async function ouvrirVnc(m, idx, label) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  await ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/${idx}`, titre: `${label} · ${m.host}` });
+  await (await ecranDistant()).ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/${idx}`, titre: `${label} · ${m.host}` });
 }
 
 async function epinglerConsole(m, idx) {

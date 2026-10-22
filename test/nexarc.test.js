@@ -112,6 +112,11 @@ test('en-têtes de sécurité, nonce, health anonyme minimal, pas de page de doc
   const csp = r.headers['content-security-policy'];
   const nonce = /'nonce-([^']+)'/.exec(csp)[1];
   assert.ok(html.includes(`nonce="${nonce}"`), 'nonce de la page = nonce de l\'en-tête');
+  // La version dans l'adresse des fichiers de la page, la page jamais gardée.
+  const { VERSION } = await import('../src/config.js');
+  assert.ok(html.includes(`src="/app.js?v=${VERSION}"`) && html.includes(`href="/nexarc.css?v=${VERSION}"`), 'fichiers de la page à la version servie');
+  assert.ok(!html.includes('__'), 'aucun gabarit laissé dans la page');
+  assert.equal(r.headers['cache-control'], 'no-store');
   assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
   assert.equal(r.headers['x-frame-options'], 'DENY');
   assert.equal(r.headers['x-powered-by'], undefined);
