@@ -33,12 +33,15 @@ ajouterPictos({
   serveur: '<rect x="3.5" y="4" width="17" height="6" rx="1.8"/><rect x="3.5" y="14" width="17" height="6" rx="1.8"/><path d="M7 7h.01M7 17h.01"/>',
   play: '<path d="M7 5v14l11-7z"/>',
   retour: '<path d="M15 6l-6 6 6 6"/>',
+  dossier: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  loupe: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
 });
 
 const stage = h('div', { class: 'stage' });
 const navs = {};
 const PAGES = {
   over: { titre: 'Tableau de bord', ic: 'parc', groupe: 'Supervision', rendre: pageOverview },
+  parcs: { titre: 'Parcs', ic: 'dossier', groupe: 'Supervision', rendre: pageParcs },
   machines: { titre: 'Postes', ic: 'parc', groupe: 'Supervision', rendre: pageMachines },
   alertes: { titre: 'Alertes', ic: 'alerte2', groupe: 'Supervision', rendre: pageAlertes },
   correctifs: { titre: 'Correctifs', ic: 'correctif', groupe: 'Sécurité', rendre: pageCorrectifs },
@@ -48,7 +51,7 @@ const PAGES = {
   ...(admin ? { comptes: { titre: 'Comptes', ic: 'utilisateurs', groupe: 'Système', rendre: () => pageComptes(api, { service: SERVICE }) } } : {}),
 };
 
-const E = { machines: [], alertes: [], patches: [], autos: [], feed: [], interval: 30, mesh: false, courante: null, filtre: 'all' };
+const E = { machines: [], alertes: [], patches: [], autos: [], parcs: [], feed: [], interval: 30, mesh: false, courante: null, filtre: 'all' };
 
 function lien(k) {
   const p = PAGES[k];
@@ -64,7 +67,7 @@ const railBar = h('i');
 const app = h('div', { class: 'app' },
   h('nav', { class: 'rail', 'aria-label': 'Navigation' },
     h('div', { class: 'mark' }, h('div', { class: 'g' }, icone('bouclier', 15)), h('b', { text: SERVICE }), h('i', { class: 'pulse' })),
-    groupe('Supervision', ['over', 'machines', 'alertes']),
+    groupe('Supervision', ['over', 'parcs', 'machines', 'alertes']),
     groupe('Sécurité', ['correctifs', 'autos']),
     groupe('Système', ['reglages', 'securite', 'comptes']),
     h('div', { class: 'railcard' },
@@ -80,15 +83,17 @@ const app = h('div', { class: 'app' },
     stage));
 document.body.append(app);
 
+// Pages hors du rail : la fiche d'un poste (sous Postes), celle d'un parc (sous Parcs).
+const SOUS_PAGES = { detail: { rail: 'machines', rendre: ref => pageDetail(ref) }, parc: { rail: 'parcs', rendre: ref => pageParc(ref) } };
 async function aller(k, { ref } = {}) {
-  // « detail » (la fiche d'une machine) n'est pas une page du rail : il ne
-  // retombe pas sur le tableau de bord.
-  if (k !== 'detail' && !PAGES[k]) k = 'over';
-  for (const [n, b] of Object.entries(navs)) b.classList.toggle('on', n === (k === 'detail' ? 'machines' : k));
+  // Une sous-page ne retombe pas sur le tableau de bord.
+  if (!SOUS_PAGES[k] && !PAGES[k]) k = 'over';
+  const sous = SOUS_PAGES[k];
+  for (const [n, b] of Object.entries(navs)) b.classList.toggle('on', n === (sous ? sous.rail : k));
   app.classList.remove('menu-ouvert');
-  if (k === 'detail') E.courante = ref;
-  history.replaceState(null, '', '#' + k + (k === 'detail' && ref ? '/' + ref : ''));
-  stage.replaceChildren(k === 'detail' ? await pageDetail(ref) : await PAGES[k].rendre());
+  if (sous) E.courante = ref;
+  history.replaceState(null, '', '#' + k + (sous && ref ? '/' + ref : ''));
+  stage.replaceChildren(sous ? await sous.rendre(ref) : await PAGES[k].rendre());
   stage.scrollTop = 0;
 }
 
@@ -97,20 +102,20 @@ async function rafraichir() {
 }
 function appliquerEtat(st) {
   if (!st) return;
-  E.machines = st.machines; E.alertes = st.alertes; E.patches = st.patches; E.autos = st.autos; E.feed = st.feed;
+  E.machines = st.machines; E.alertes = st.alertes; E.patches = st.patches; E.autos = st.autos; E.feed = st.feed; E.parcs = st.parcs || [];
   E.mesh = !!st.mesh_enabled; if (st.intervalle) E.interval = st.intervalle;
   const online = E.machines.filter(m => m.online).length, total = E.machines.filter(m => m.source === 'agent').length || 1;
   railOnline.textContent = `${online} / ${E.machines.filter(m => m.source === 'agent').length}`;
   railBar.style.width = Math.round(online / total * 100) + '%';
-  for (const k of ['over', 'machines', 'alertes', 'correctifs']) if (navs[k]) majCompteur(k);
+  for (const k of ['over', 'parcs', 'machines', 'alertes', 'correctifs']) if (navs[k]) majCompteur(k);
   // Re-rendu automatique seulement des vues sans saisie en cours (la liste des
   // postes garde son filtre et sa recherche ; la fiche, son onglet).
   const p = location.hash.slice(1).split('/')[0];
-  if (['over', 'alertes', 'correctifs', 'autos'].includes(p)) aller(p, { ref: E.courante });
+  if (['over', 'parcs', 'parc', 'alertes', 'correctifs', 'autos'].includes(p)) aller(p, { ref: E.courante });
 }
 const alertesOuvertes = () => E.alertes.filter(a => a.etat !== 'resolue');
 function majCompteur(k) {
-  const n = { machines: E.machines.length, alertes: alertesOuvertes().length, correctifs: E.patches.length }[k];
+  const n = { parcs: E.parcs.length, machines: E.machines.length, alertes: alertesOuvertes().length, correctifs: E.patches.length }[k];
   const b = navs[k]?.querySelector('.cnt');
   if (n === undefined) return;
   if (b) b.textContent = n; else navs[k].append(h('span', { class: 'cnt', text: String(n) }));
@@ -158,7 +163,7 @@ async function pageOverview() {
       fig('puce', '', 'Charge CPU moyenne', cpuMoy + ' %', 'postes en ligne')),
     h('div', { class: 'split' },
       h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'À surveiller' }), h('button', { class: 'btn sm flat', type: 'button', onclick: () => aller('machines') }, 'Tous les postes', icone('fleche', 14))),
-        h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Site' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))),
+        h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Parc' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))),
           h('tbody', {}, watch.length ? watch.map(m => ligneMachine(m, false)) : h('tr', {}, h('td', { colspan: 4, class: 'vide', text: 'Aucun poste en ligne.' })))))),
       h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Activité récente' }), h('span', { class: 'note', text: 'flux temps réel' })), carteFeed())));
 }
@@ -176,12 +181,134 @@ function ligneFeed(f) {
   return h('div', { class: 'notice' }, h('span', { class: 'itile key' }, icone('jauge', 15)), h('div', {}, h('p', { text: f.html }), h('span', { class: 'when', text: `${f.ip || ''} · ${ageDe(f.cree)}` })));
 }
 
+// Les postes d'une liste en tableau : la même ligne partout (Postes, un parc).
+function tableauPostes(list, vide = 'Aucun poste.') {
+  return h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Parc' }), h('th', { class: 'cache-l', text: 'Système' }), h('th', { class: 'cache-l', text: 'CPU' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))),
+    h('tbody', {}, list.length ? list.slice().sort((a, b) => b.risk - a.risk).map(m => ligneMachine(m, true)) : h('tr', {}, h('td', { colspan: 6, class: 'vide', text: vide })))));
+}
+
+const memeParc = (m, p) => m.site.toLowerCase() === p.nom.toLowerCase();
+async function pageParcs() {
+  const q = h('input', { class: 'field fld-sm', type: 'search', placeholder: 'Chercher un parc' });
+  const corps = h('tbody', {});
+  const peindre = () => {
+    const t = q.value.toLowerCase().trim();
+    const list = E.parcs.filter(p => !t || p.nom.toLowerCase().includes(t));
+    corps.replaceChildren(...(list.length ? list.map(p => {
+      const tr = h('tr', {},
+        h('td', { class: 'principal' }, h('div', { class: 'who-cell' }, h('span', { class: 'itile' }, icone('dossier')), h('div', {}, h('b', { text: p.nom }), h('small', { text: `${p.postes} poste${p.postes > 1 ? 's' : ''}` })))),
+        h('td', { class: 'mono', text: `${p.en_ligne} / ${p.postes}` }),
+        h('td', { class: 'cache-s' }, p.en_alerte ? h('span', { class: 'tag warn' }, h('i', { class: 'd' }), `${p.en_alerte} en alerte`) : h('span', { class: 'dim', text: '—' })));
+      tr.addEventListener('click', () => aller('parc', { ref: p.id }));
+      return tr;
+    }) : [h('tr', {}, h('td', { colspan: 3, class: 'vide', text: t ? 'Aucun parc à ce nom.' : 'Aucun parc.' }))]));
+  };
+  q.addEventListener('input', peindre);
+  peindre();
+  return h('div', { class: 'page' },
+    h('div', { class: 'headrow' }, h('div', {}, h('h1', { class: 'title', text: 'Parcs' }), h('p', { class: 'lede', text: 'Chaque parc regroupe des postes : un site, un client, un VLAN. Ouvre un parc pour y ajouter un poste.' })),
+      h('div', { class: 'actions' }, peutAgir ? h('button', { class: 'btn solid', type: 'button', onclick: async () => { const p = await creerParc(); if (p) aller('parc', { ref: p.id }); } }, icone('plus', 15), 'Créer un parc') : null)),
+    h('div', { class: 'card' }, h('div', { class: 'pad rowline' }, q),
+      h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Parc' }), h('th', { text: 'En ligne' }), h('th', { class: 'cache-s', text: 'Alertes' }))), corps))));
+}
+
+async function pageParc(ref) {
+  const p = E.parcs.find(x => x.id === ref);
+  if (!p) { setTimeout(() => aller('parcs'), 0); return h('div', { class: 'page' }, h('p', { class: 'vide', text: 'Parc introuvable.' })); }
+  const postes = E.machines.filter(m => memeParc(m, p));
+  const sur = fn => async () => { try { await fn(); } catch (e) { toast(e.message, true); } };
+  const renommer = sur(async () => {
+    const champ = h('input', { class: 'field', maxlength: 40, value: p.nom, 'aria-label': 'Nom du parc' });
+    const err = h('p', { class: 'erreur', role: 'alert' });
+    await dialogue({ titre: 'Renommer le parc', texte: 'Ses postes et les automatisations qui le visent suivent le nouveau nom.', contenu: [champ, err],
+      boutons: [{ texte: 'Annuler', classe: 'flat', valeur: false }, { texte: 'Renommer', classe: 'solid', agir: async () => {
+        try { appliquerEtat(await api.patch(`/api/parcs/${p.id}`, { nom: champ.value.trim() })); toast('Parc renommé.'); aller('parc', { ref: p.id }); return true; } catch (e) { err.textContent = e.message; return false; }
+      } }] });
+  });
+  const supprimer = sur(async () => {
+    if (!await confirmer(`Supprimer le parc « ${p.nom} » ?`, 'Seul un parc vide se supprime.', { danger: true, oui: 'Supprimer' })) return;
+    appliquerEtat(await api.del(`/api/parcs/${p.id}`)); toast('Parc supprimé.'); aller('parcs');
+  });
+  return h('div', { class: 'page' },
+    h('button', { class: 'btn flat mb12', type: 'button', onclick: () => aller('parcs') }, icone('retour', 15), 'Retour aux parcs'),
+    h('div', { class: 'headrow' }, h('div', {}, h('h1', { class: 'title', text: p.nom }), h('p', { class: 'lede', text: `${p.postes} poste${p.postes > 1 ? 's' : ''} · ${p.en_ligne} en ligne${p.en_alerte ? ` · ${p.en_alerte} en alerte` : ''}` })),
+      h('div', { class: 'actions' },
+        // Écran étroit : renommer et supprimer passent dans une feuille d'actions.
+        admin ? h('button', { class: 'btn cache-s', type: 'button', onclick: renommer }, 'Renommer') : null,
+        admin && !p.postes ? h('button', { class: 'btn danger cache-s', type: 'button', onclick: supprimer }, 'Supprimer') : null,
+        admin ? h('button', { class: 'btn seul-s', type: 'button', 'aria-label': 'Actions du parc', onclick: () => feuille(p.nom, [{ texte: 'Renommer', agir: renommer }, ...(p.postes ? [] : [{ texte: 'Supprimer', danger: true, agir: supprimer }])]) }, icone('actions', 16)) : null,
+        peutAgir ? h('button', { class: 'btn solid', type: 'button', onclick: () => dialogueInscription(false, { parc: p.nom }) }, icone('plus', 15), 'Ajouter un poste') : null)),
+    h('div', { class: 'card' }, tableauPostes(postes, 'Aucun poste dans ce parc : « Ajouter un poste » l’y range directement.')));
+}
+
+// Créer un parc : son nom, puis il rejoint la liste. Rend le parc créé.
+async function creerParc(nomPropose = '') {
+  const champ = h('input', { class: 'field', maxlength: 40, value: nomPropose, placeholder: 'Nom du parc (ex. Bureau, Client Dupuis, VLAN 20)', 'aria-label': 'Nom du parc' });
+  const err = h('p', { class: 'erreur', role: 'alert' });
+  let cree = null;
+  await dialogue({ titre: 'Créer un parc', contenu: [champ, err],
+    boutons: [{ texte: 'Annuler', classe: 'flat', valeur: false }, { texte: 'Créer', classe: 'solid', agir: async () => {
+      try { const r = await api.post('/api/parcs', { nom: champ.value.trim() }); appliquerEtat(r); cree = E.parcs.find(x => x.id === r.parc) || null; toast('Parc créé.'); return true; } catch (e) { err.textContent = e.message; return false; }
+    } }] });
+  return cree;
+}
+
+// Choisir un parc : une fenêtre avec une recherche, la liste filtrée au fil
+// de la frappe, et la création d'un parc au nom tapé s'il n'existe pas. Rend
+// le nom choisi, ou null. Échap ne ferme qu'elle, pas le dialogue en dessous.
+function choisirParc({ actuel = '' } = {}) {
+  return new Promise(resolve => {
+    const precedent = document.activeElement;
+    const q = h('input', { class: 'field', type: 'search', placeholder: 'Chercher ou créer un parc', 'aria-label': 'Chercher un parc', autocomplete: 'off' });
+    const liste = h('div', { class: 'choix-liste', role: 'listbox', 'aria-label': 'Parcs' });
+    const fermer = v => { voile.remove(); window.removeEventListener('keydown', clavier, true); precedent?.focus?.(); resolve(v); };
+    const clavier = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); fermer(null); }
+      else if (e.key === 'Enter' && document.activeElement === q) { e.stopPropagation(); e.preventDefault(); liste.querySelector('button')?.click(); }
+      else if (e.key === 'ArrowDown' && document.activeElement === q) { e.preventDefault(); liste.querySelector('button')?.focus(); }
+    };
+    const ligne = (ic, titre, sous, agir, on = false) => h('button', { class: 'choix' + (on ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': on ? 'true' : 'false', onclick: agir },
+      h('span', { class: 'itile' }, icone(ic, 15)), h('span', { class: 'choix-t' }, h('b', { text: titre }), h('small', { text: sous })), on ? icone('verifie', 15) : null);
+    const peindre = () => {
+      const t = q.value.trim(), tl = t.toLowerCase();
+      const trouves = E.parcs.filter(p => !tl || p.nom.toLowerCase().includes(tl));
+      const exact = E.parcs.some(p => p.nom.toLowerCase() === tl);
+      liste.replaceChildren(...[
+        ...trouves.map(p => ligne('dossier', p.nom, `${p.postes} poste${p.postes > 1 ? 's' : ''}`, () => fermer(p.nom), p.nom.toLowerCase() === actuel.toLowerCase())),
+        t && !exact && peutAgir ? ligne('plus', `Créer « ${t} »`, 'nouveau parc', async () => {
+          try { const r = await api.post('/api/parcs', { nom: t }); appliquerEtat(r); fermer(E.parcs.find(x => x.id === r.parc)?.nom || t); } catch (e) { toast(e.message, true); }
+        }) : null,
+        !trouves.length && !(t && peutAgir) ? h('p', { class: 'hint', text: 'Aucun parc.' }) : null,
+      ].filter(Boolean));
+    };
+    q.addEventListener('input', peindre);
+    const boite = h('div', { class: 'dialogue choix-parc', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Choisir un parc' },
+      h('h3', { text: 'Choisir un parc' }), h('div', { class: 'choix-cherche mt10' }, icone('loupe', 15), q), liste,
+      h('div', { class: 'pied' }, h('button', { class: 'btn flat', type: 'button', text: 'Annuler', onclick: () => fermer(null) })));
+    const voile = h('div', { class: 'voile', onclick: e => { if (e.target === voile) fermer(null); } }, boite);
+    peindre();
+    document.body.append(voile);
+    window.addEventListener('keydown', clavier, true);
+    q.focus();
+  });
+}
+// Le champ « Parc » d'un formulaire : le nom choisi et le bouton qui ouvre le choix.
+function champParc(depart, { surChange = () => {} } = {}) {
+  let valeur = depart;
+  const nom = h('b', { class: 'tronque', text: valeur });
+  const bouton = h('button', { class: 'field champ-parc', type: 'button', 'aria-label': 'Choisir le parc', onclick: async () => {
+    const v = await choisirParc({ actuel: valeur });
+    if (v && v !== valeur) { valeur = v; nom.textContent = v; surChange(v); }
+  } }, icone('dossier', 15), nom, h('span', { class: 'champ-parc-c', text: 'Changer' }));
+  return { el: bouton, valeur: () => valeur };
+}
+
 async function pageMachines() {
   const filtres = [['all', 'Tous'], ['online', 'En ligne'], ['offline', 'Hors ligne'], ['warn', 'En alerte']];
   const chips = h('div', { class: 'views' });
   const corps = h('tbody', {});
   const compte = h('span', { class: 'grow dim' });
-  const q = h('input', { class: 'field fld-sm', type: 'search', placeholder: 'Chercher un poste, une IP, un site' });
+  const q = h('input', { class: 'field fld-sm', type: 'search', placeholder: 'Chercher un poste, une IP, un parc' });
   const peindre = () => {
     let list = E.machines.slice();
     if (E.filtre === 'online') list = list.filter(m => m.online);
@@ -200,7 +327,7 @@ async function pageMachines() {
     h('div', { class: 'headrow' }, h('div', {}, h('h1', { class: 'title', text: 'Postes' }), h('p', { class: 'lede', text: 'Chaque poste exécute l\'agent NEXARC et remonte son état.' })),
       h('div', { class: 'actions' }, peutAgir ? h('button', { class: 'btn solid', type: 'button', onclick: () => dialogueInscription(false) }, icone('plus', 15), 'Ajouter un poste') : null)),
     h('div', { class: 'card' }, h('div', { class: 'pad rowline' }, chips, q, compte),
-      h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Site' }), h('th', { class: 'cache-l', text: 'Système' }), h('th', { class: 'cache-l', text: 'CPU' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))), corps))));
+      h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Parc' }), h('th', { class: 'cache-l', text: 'Système' }), h('th', { class: 'cache-l', text: 'CPU' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))), corps))));
 }
 
 const LIBELLES_REGLES = {
@@ -296,23 +423,28 @@ function ligneAuto(a) {
       peutAgir && acts.length ? acts.map(x => h('button', { class: 'btn sm flat cache-s' + (x.danger ? ' danger' : ''), type: 'button', onclick: sur(x.agir), text: x.texte })) : h('span', { class: 'mono dim', text: a.runs ? `${a.dernier_statut} · ${a.runs}×` : 'jamais' }),
       peutAgir && acts.length ? h('button', { class: 'btn sm flat seul-s', type: 'button', 'aria-label': 'Actions', onclick: sur(() => feuille(a.nom, acts)) }, icone('actions', 16)) : null));
 }
-function cibleTexte(a) { return { tous: 'tous les postes', site: 'site ' + a.cible_val, oskind: 'systèmes ' + a.cible_val, host: 'poste ' + a.cible_val }[a.cible] || a.cible; }
+function cibleTexte(a) { return { tous: 'tous les postes', site: 'parc ' + a.cible_val, oskind: 'systèmes ' + a.cible_val, host: 'poste ' + a.cible_val }[a.cible] || a.cible; }
 function rythmeTexte(a) { const h2 = a.toutes_h; const base = h2 < 24 ? (h2 === 1 ? 'toutes les heures' : `toutes les ${h2} h`) : h2 === 24 ? 'chaque jour' : h2 === 168 ? 'chaque semaine' : `toutes les ${Math.round(h2 / 24)} j`; return base + (h2 >= 24 ? ` à ${String(a.heure).padStart(2, '0')}h` : ''); }
 function boutonNouvelleAuto(peindre) {
   return h('button', { class: 'btn solid', type: 'button', onclick: async () => {
     const nom = h('input', { class: 'field', maxlength: 60, placeholder: 'Nom (ex. Mises à jour de sécurité)' });
     const kind = h('select', { class: 'field' }, Object.entries(AU_KIND).filter(([v]) => admin || v !== 'cmd').map(([v, t]) => h('option', { value: v, text: t })));
     const payload = h('input', { class: 'field', placeholder: 'Commande ou paquet (vide = toutes les mises à jour)' });
-    const cible = h('select', { class: 'field' }, [['tous', 'Tous les postes'], ['site', 'Un site'], ['oskind', 'Un système'], ['host', 'Un poste']].map(([v, t]) => h('option', { value: v, text: t })));
-    const cibleVal = h('input', { class: 'field hide', placeholder: 'Valeur (site / lin / nom du poste)' });
-    cible.addEventListener('change', () => { cibleVal.style.display = cible.value === 'tous' ? 'none' : 'block'; });
+    const cible = h('select', { class: 'field' }, [['tous', 'Tous les postes'], ['site', 'Un parc'], ['oskind', 'Un système'], ['host', 'Un poste']].map(([v, t]) => h('option', { value: v, text: t })));
+    const cibleVal = h('input', { class: 'field hide', placeholder: 'Valeur (lin / nom du poste)' });
+    const parcVise = champParc(E.parcs[0]?.nom || 'Agents');
+    parcVise.el.classList.add('hide');
+    cible.addEventListener('change', () => {
+      cibleVal.style.display = ['oskind', 'host'].includes(cible.value) ? 'block' : 'none';
+      parcVise.el.style.display = cible.value === 'site' ? 'flex' : 'none';
+    });
     const toutes = h('select', { class: 'field' }, [[1, 'Toutes les heures'], [6, 'Toutes les 6 h'], [24, 'Chaque jour'], [168, 'Chaque semaine']].map(([v, t]) => h('option', { value: v, text: t, selected: v === 24 })));
     const heure = h('select', { class: 'field' }, Array.from({ length: 24 }, (_, i) => h('option', { value: i, text: `à ${String(i).padStart(2, '0')}h`, selected: i === 2 })));
     const err = h('p', { class: 'erreur', role: 'alert' });
     const ok = await dialogue({ titre: 'Nouvelle automatisation', large: true,
-      contenu: [nom, h('div', { class: 'row2 mt9' }, kind, payload), h('div', { class: 'row2 mt9' }, cible, cibleVal), h('div', { class: 'row2 mt9' }, toutes, heure), err],
+      contenu: [nom, h('div', { class: 'row2 mt9' }, kind, payload), h('div', { class: 'row2 mt9' }, cible, cibleVal, parcVise.el), h('div', { class: 'row2 mt9' }, toutes, heure), err],
       boutons: [{ texte: 'Annuler', classe: 'flat', valeur: false }, { texte: 'Créer', classe: 'solid', agir: async () => {
-        const corps = { nom: nom.value.trim(), kind: kind.value, payload: payload.value.trim(), cible: cible.value, cible_val: cibleVal.value.trim(), toutes_h: Number(toutes.value), heure: Number(heure.value) };
+        const corps = { nom: nom.value.trim(), kind: kind.value, payload: payload.value.trim(), cible: cible.value, cible_val: cible.value === 'site' ? parcVise.valeur() : cibleVal.value.trim(), toutes_h: Number(toutes.value), heure: Number(heure.value) };
         if (!corps.nom) { err.textContent = 'Donne un nom.'; return false; }
         try { E.autos = (await api.post('/api/automations', corps)).automations; return true; } catch (e) { err.textContent = e.message; return false; }
       } }] });
@@ -348,6 +480,19 @@ async function pageReglages() {
       peutAgir ? h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Enrôler un poste' })), h('div', { class: 'cardbody' }, h('p', { class: 'hint mt0', text: 'Un code d\'inscription à usage unique génère la commande d\'installation.' }), h('button', { class: 'btn solid', type: 'button', onclick: () => dialogueInscription(false) }, icone('plus', 15), 'Générer une commande'))) : null));
 }
 
+// Le parc d'un poste, et de quoi l'y ranger ailleurs.
+function ligneParc(m) {
+  const p = E.parcs.find(x => memeParc(m, x));
+  return h('div', { class: 'kv' }, h('span', { class: 'k', text: 'Parc' }), h('span', { class: 'v rowline9' },
+    p ? h('button', { class: 'btn sm flat', type: 'button', text: m.site, onclick: () => aller('parc', { ref: p.id }) }) : h('span', { text: m.site }),
+    peutAgir ? h('button', { class: 'btn sm', type: 'button', text: 'Changer', onclick: async () => {
+      const v = await choisirParc({ actuel: m.site });
+      const cible = v && E.parcs.find(x => x.nom === v);
+      if (!cible || v === m.site) return;
+      try { appliquerEtat(await api.put(`/api/machines/${m.id}/parc`, { parc: cible.id })); toast(`Poste rangé dans « ${v} ».`); aller('detail', { ref: m.id }); } catch (e) { toast(e.message, true); }
+    } }) : null));
+}
+
 async function pageDetail(ref) {
   const m = E.machines.find(x => x.id === ref);
   if (!m) { setTimeout(() => aller('machines'), 0); return h('div', { class: 'page' }, h('p', { class: 'vide', text: 'Poste introuvable.' })); }
@@ -358,7 +503,7 @@ async function pageDetail(ref) {
   const onglets = ['info', ...(m.inventory ? ['comp'] : []), ...(isAgent ? ['soft', 'term'] : [])];
   const paneInfo = h('div', { class: 'dtpane' },
     h('div', { class: 'grille' },
-      h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Informations système' })), h('div', { class: 'cardbody' }, kv('Nom d\'hôte', m.host), kv('Adresse IP', m.ip || '—'), kv('Système', m.os || '—'), kv('Site', m.site), kv('Dernier contact', m.seen ? ageDe(m.seen) : '—'))),
+      h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Informations système' })), h('div', { class: 'cardbody' }, kv('Nom d\'hôte', m.host), kv('Adresse IP', m.ip || '—'), kv('Système', m.os || '—'), ligneParc(m), kv('Dernier contact', m.seen ? ageDe(m.seen) : '—'))),
       h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Posture de sécurité' })), h('div', { class: 'cardbody' }, kv('Antivirus', m.av || '—'), kv('Pare-feu', m.fw || '—'), kv('Chiffrement disque', m.enc || '—'), kv('Correctifs en attente', m.patch + ' en attente'), kv('Score de risque', m.risk + ' / 100'))),
       m.redfish && peutAgir ? carteAlimentation(m) : null));
   const paneComp = h('div', { class: 'dtpane hide' }, carteComposants(m));
@@ -376,7 +521,7 @@ async function pageDetail(ref) {
     h('button', { class: 'btn flat mb12', type: 'button', onclick: () => aller('machines') }, icone('retour', 15), 'Retour aux postes'),
     h('div', { class: 'detailhead' },
       h('div', { class: 'big ' + (m.risk >= 75 ? 'hot' : '') }, icone(osIcone(m.oskind), 22)),
-      h('div', { class: 'grow1' }, h('h1', { class: 'tronque', text: m.host }), h('div', { class: 'sub dim', text: `${m.ip || '—'} · ${m.site}` })),
+      h('div', { class: 'grow1' }, h('h1', { class: 'tronque', text: m.host }), h('div', { class: 'sub dim', text: `${m.ip || '—'} · parc ${m.site}` })),
       h('div', { class: 'actions' }, actionsDetail(m))),
     h('div', { class: 'metricgrid' },
       h('div', { class: 'mcard' }, h('div', { class: 'lbl' }, icone('puce', 15), 'Processeur'), h('div', { class: 'val' }, h('span', { text: m.online ? String(m.cpu) : '—' }), h('em', { text: '%' })), cpuS),
@@ -645,15 +790,18 @@ function typeLabel(t) { return (TYPES || []).find(x => x.id === t)?.label || t; 
 // Les types d'accès proposés, les recommandés marqués d'une étoile.
 function optionsDeTypes(types) { return types.map(t => h('option', { value: t.id, text: t.label + (t.recommande ? ' ★' : '') })); }
 
-async function dialogueInscription(relais) {
-  const site = h('input', { class: 'field', maxlength: 40, value: relais ? 'Relais' : 'Agents' });
+async function dialogueInscription(relais, { parc = '' } = {}) {
+  // Le parc : celui d'où l'on vient, sinon le premier existant ; se change par le choix avec recherche.
+  const depart = parc || (relais ? (E.parcs.find(p => p.nom === 'Relais')?.nom || 'Relais') : (E.parcs.find(p => p.nom === 'Agents') || E.parcs[0])?.nom || 'Agents');
   const nom = h('input', { class: 'field', maxlength: 60, placeholder: 'Laisser vide = nom réseau de la machine' });
   const osTabs = h('div', { class: 'views' });
   const zone = h('div', {});
   let os = detecterOs();
   let info = null;
+  // Changer de parc tire un nouveau code : le parc est inscrit dans le code.
+  const site = champParc(depart, { surChange: () => { info = null; peindreZone(); rafraichirInfo(); } });
   const rafraichirInfo = async () => {
-    try { info = await api.post('/api/enroll/info', { site: site.value.trim() || 'Agents', name: nom.value.trim(), relay: relais }); }
+    try { info = await api.post('/api/enroll/info', { site: site.valeur(), name: nom.value.trim(), relay: relais }); }
     catch (e) { toast(e.message, true); return; }
     peindreZone();
   };
@@ -688,12 +836,12 @@ async function dialogueInscription(relais) {
   peindreOs(); rafraichirInfo();
   let t;
   const relance = () => { clearTimeout(t); t = setTimeout(rafraichirInfo, 400); };
-  site.addEventListener('input', relance); nom.addEventListener('input', relance);
+  nom.addEventListener('input', relance);
   const modeKvm = !relais && admin ? boutonKvm() : null;
   await dialogue({ titre: relais ? 'Ajouter un nœud relais (Wake-on-LAN)' : 'Ajouter un poste', large: true,
     contenu: [
       relais ? h('div', { class: 'note info' }, icone('reveil'), h('div', { text: 'Installe-le sur une machine toujours allumée du VLAN à couvrir (un Raspberry Pi suffit).' })) : null,
-      h('label', { class: 'champ' }, h('span', { class: 'lbl', text: 'Parc / site' }), site),
+      h('div', { class: 'champ' }, h('span', { class: 'lbl', text: 'Parc' }), site.el),
       h('label', { class: 'champ mt10' }, h('span', { class: 'lbl', text: 'Nom du poste (optionnel)' }), nom),
       h('p', { class: 'lbl mt14', text: 'Système' }), osTabs, zone, modeKvm],
     boutons: [{ texte: 'Fermer', classe: 'solid', valeur: true }] });
@@ -708,20 +856,20 @@ async function dialogueKvm() {
   const host = h('input', { class: 'field', maxlength: 60, placeholder: 'Nom (ex. serveur-a)' });
   const ip = h('input', { class: 'field', maxlength: 45, placeholder: 'IP (optionnel)' });
   const typeSel = h('select', { class: 'field' }, optionsDeTypes(TYPES.filter(t => t.url || t.vnc)));
-  const site = h('input', { class: 'field', maxlength: 40, value: 'Matériel' });
+  const site = champParc((E.parcs.find(p => p.nom === 'Matériel') || E.parcs[0])?.nom || 'Matériel');
   const cible = h('input', { class: 'field', spellcheck: 'false', placeholder: 'https://idrac.exemple.org' });
   const embed = h('input', { type: 'checkbox', checked: true });
   const err = h('p', { class: 'erreur' });
   await dialogue({ titre: 'Carte de gestion (sans agent)', large: true,
     contenu: [h('p', { class: 'hint mt0', text: 'Accès écran, clavier et BIOS/UEFI sans agent, même serveur éteint.' }),
       h('div', { class: 'row2' }, host, ip), h('div', { class: 'mt9' }, typeSel),
-      h('label', { class: 'champ mt9' }, h('span', { class: 'lbl', text: 'Parc / site' }), site), cible,
+      h('div', { class: 'champ mt9' }, h('span', { class: 'lbl', text: 'Parc' }), site.el), cible,
       h('label', { class: 'chk mt9' }, embed, h('span', { text: 'Afficher dans NEXARC' })), err],
     boutons: [{ texte: 'Annuler', classe: 'flat', valeur: false }, { texte: 'Ajouter le matériel', classe: 'solid', agir: async () => {
       if (!host.value.trim()) { err.textContent = 'Donne un nom.'; return false; }
       if (!cible.value.trim()) { err.textContent = 'Renseigne l\'adresse de la console.'; return false; }
       try {
-        appliquerEtat(await api.post('/api/hosts', { host: host.value.trim(), ip: ip.value.trim(), site: site.value.trim() || 'Matériel', ctype: typeSel.value, target: cible.value.trim(), embed: embed.checked, label: typeLabel(typeSel.value) }));
+        appliquerEtat(await api.post('/api/hosts', { host: host.value.trim(), ip: ip.value.trim(), site: site.valeur(), ctype: typeSel.value, target: cible.value.trim(), embed: embed.checked, label: typeLabel(typeSel.value) }));
         toast('Matériel ajouté.'); return true;
       } catch (e) { err.textContent = e.message; return false; }
     } }] });

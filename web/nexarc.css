@@ -100,3 +100,17 @@
 td.cache-l{white-space:nowrap}
 .kv>span:first-child,.kv .k{flex:1 1 0;min-width:0}
 .kv .v,.kv b{flex:0 0 auto;max-width:60%}
+
+/* Parc : un champ qui ouvre le choix avec recherche, et la liste de ce choix. */
+.champ-parc{display:flex;align-items:center;gap:9px;text-align:left;cursor:pointer;min-width:0}
+.champ-parc b{flex:1 1 auto;min-width:0;font-weight:500}
+.champ-parc-c{flex:0 0 auto;color:var(--muted);font-size:12px}
+.choix-cherche{display:flex;align-items:center;gap:8px}
+.choix-cherche .field{flex:1 1 auto;min-width:0}
+.choix-liste{display:flex;flex-direction:column;gap:2px;margin-top:12px;max-height:min(46dvh,360px);overflow-y:auto}
+.choix{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:9px 10px;border-radius:10px;background:none;border:0;color:inherit;text-align:left;cursor:pointer}
+.choix:hover,.choix:focus-visible{background:var(--well)}
+.choix.on{background:var(--well)}
+.choix-t{display:flex;flex-direction:column;min-width:0}
+.choix-t b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.choix-t small{color:var(--muted);font-size:12px}
