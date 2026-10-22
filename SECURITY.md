@@ -55,6 +55,8 @@ Audit de suivi du 2026-10-19 sur 2.0.3 (mêmes classes de défauts que celles re
 
 Suivi du 2026-10-21 (2.0.5) : un poste inscrit avec un nom contenant une espace (« MacBook Pro ») n'apparaissait jamais. L'agent envoyait ce nom comme nom d'hôte et la remontée le refusait (400), alors que l'inscription l'avait accepté. La remontée admet désormais les caractères du nom d'inscription (`src/api.js:23`), toujours sans apostrophe, guillemet, dollar, point-virgule ni barre oblique inverse ; l'agent envoie son vrai nom d'hôte (`agent/nexarc-agent.py:344`) et affiche la raison d'un refus. Essai : `test/nexarc.test.js:219` (nom avec espace accepté ; `;`, `$`, apostrophe, espace en tête, 81 caractères refusés). Aucun contrôle ne change de statut. Essais : 48 du service, 23 de l'agent.
 
+Suivi du 2026-10-22 (2.1.0) : réveil d'un poste éteint sans relais sur son segment. NEXARC reste sur le réseau isolé du Hub et confie le paquet magique à MapMyLAN (réseau de l'hôte) : `POST <MapMyLAN>/api/reveil` avec la MAC seule et le jeton dérivé par le Hub pour NEXARC (`src/wol.js:42`, appelé à `src/api.js:352`). Redirection jamais suivie, délai de 8 s, réponse jamais relayée (une raison courte seulement). Adresse et jeton viennent du Compose du Hub (`NEXARC_REVEIL_URL`, `NEXARC_REVEIL_JETON`, capacité acceptée `network.wake`). Aucun contrôle ne change de statut. Essais : 49 du service (1 nouveau : MapMyLAN appelé avec la MAC et le jeton, refus 404 rendu en 409 lisible, injoignable, réponse 500), 23 de l'agent.
+
 ## Control status
 | ID | Severity | Status | Evidence | Notes |
 |---|---|---|---|---|

@@ -146,6 +146,9 @@ Trois commits de correction, chacun un sujet : chemins Redfish gardés chez la c
 ## Suivi du 2026-10-21 (2.0.5)
 Deux commits, un sujet chacun : motif du nom remonté aligné sur celui de l'inscription, agent qui envoie son nom d'hôte réel. Surface publique inchangée (même route, même schéma, motif élargi au seul jeu de caractères déjà admis à l'inscription). 48 essais du service et 23 de l'agent, verts.
 
+## Suivi du 2026-10-22 (2.1.0)
+`reveilParMapmylan` rangée avec l'émission dans `src/wol.js` ; la route de réveil garde sa forme (réponse `{ ok, mac, methods }`) et ajoute une méthode « MapMyLAN ». Une ligne morte retirée (`now`, jamais lue). 49 essais du service et 23 de l'agent, verts.
+
 ## Verification (chapter 49)
 - [x] Full suite passes and matches the baseline — les 109 essais de la référence, verts avant et après la passe, plus 21 ajoutés depuis (130 en tout), relancés à la génération de ce fichier
 - [x] Public API diff empty — inventaire de la surface publique identique sur la passe ; depuis, le renommage du service et des ajouts déclarés, aucun retrait
