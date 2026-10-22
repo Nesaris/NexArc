@@ -96,7 +96,17 @@ export function ouvrirBase(dossier) {
 
     CREATE TABLE IF NOT EXISTS flux(
       id INTEGER PRIMARY KEY AUTOINCREMENT, texte TEXT NOT NULL, ip TEXT, cree REAL NOT NULL);
+
+    -- Un parc regroupe des postes (colonne machines.site, par son nom).
+    CREATE TABLE IF NOT EXISTS parcs(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL UNIQUE,
+      nom TEXT NOT NULL UNIQUE COLLATE NOCASE, cree REAL NOT NULL);
   `);
+  // Les sites déjà portés par des postes deviennent des parcs ; une base neuve
+  // en reçoit un, celui où l'inscription range un poste par défaut.
+  const ajouter = db.prepare('INSERT OR IGNORE INTO parcs(ref, nom, cree) VALUES(?,?,?)');
+  for (const { site } of db.prepare("SELECT DISTINCT site FROM machines WHERE site <> ''").all()) ajouter.run(nouvelleRef(), site, secondes());
+  if (!db.prepare('SELECT 1 FROM parcs LIMIT 1').get()) ajouter.run(nouvelleRef(), 'Agents', secondes());
   return db;
 }
 
@@ -173,8 +183,44 @@ export class Parc {
     const feed = this.db.prepare('SELECT texte, ip, cree FROM flux ORDER BY cree DESC LIMIT 8').all()
       .map(f => ({ html: f.texte, ip: f.ip || '', cree: f.cree }));
     const patches = this.correctifs(rows);
-    return { machines, alertes, patches, autos: this.automatisations(), feed, intervalle: null };
+    return { machines, alertes, patches, autos: this.automatisations(), parcs: this.parcs(rows), feed, intervalle: null };
   }
+
+  // Les parcs, avec leurs comptes de postes (avec agent, en ligne, en alerte).
+  parcs(rows = this.db.prepare('SELECT site, source, last_report, risk FROM machines').all()) {
+    // Un site arrivé par la reprise d'une 1.x ou une remontée devient un parc.
+    const ajouter = this.db.prepare('INSERT OR IGNORE INTO parcs(ref, nom, cree) VALUES(?,?,?)');
+    for (const site of new Set(rows.map(m => m.site).filter(Boolean))) if (!this.parcParNom(site)) ajouter.run(nouvelleRef(), site, secondes());
+    return this.db.prepare('SELECT ref, nom, cree FROM parcs ORDER BY nom COLLATE NOCASE').all().map(p => {
+      const siens = rows.filter(m => m.site.toLowerCase() === p.nom.toLowerCase());
+      return {
+        id: p.ref, nom: p.nom, cree: p.cree, postes: siens.length,
+        en_ligne: siens.filter(m => m.source === 'agent' && this.enLigne(m.last_report)).length,
+        en_alerte: siens.filter(m => m.risk >= 75).length,
+      };
+    });
+  }
+  parcParRef(ref) { return REF.test(String(ref)) ? this.db.prepare('SELECT * FROM parcs WHERE ref = ?').get(ref) || null : null; }
+  parcParNom(nom) { return this.db.prepare('SELECT * FROM parcs WHERE nom = ?').get(String(nom)) || null; }
+  // Le parc de ce nom, créé s'il n'existe pas (inscription, matériel ajouté).
+  assurerParc(nom) {
+    const p = this.parcParNom(nom);
+    if (p) return p;
+    this.db.prepare('INSERT INTO parcs(ref, nom, cree) VALUES(?,?,?)').run(nouvelleRef(), nom, secondes());
+    return this.parcParNom(nom);
+  }
+  // Renommer un parc renomme le site de ses postes et la cible des
+  // automatisations qui le visaient : tout ou rien.
+  renommerParc(id, nom) {
+    return transaction(this.db, () => {
+      const avant = this.db.prepare('SELECT nom FROM parcs WHERE id = ?').get(id).nom;
+      this.db.prepare('UPDATE parcs SET nom = ? WHERE id = ?').run(nom, id);
+      this.db.prepare('UPDATE machines SET site = ? WHERE site = ? COLLATE NOCASE').run(nom, avant);
+      this.db.prepare("UPDATE automatisations SET cible_val = ? WHERE cible = 'site' AND cible_val = ? COLLATE NOCASE").run(nom, avant);
+      return avant;
+    });
+  }
+  postesDuParc(nom) { return this.db.prepare('SELECT COUNT(*) n FROM machines WHERE site = ? COLLATE NOCASE').get(nom).n; }
 
   // Résumé léger pour les sondes du Hub : des comptes, jamais l'état complet.
   resume() {

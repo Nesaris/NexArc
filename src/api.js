@@ -20,6 +20,9 @@ const NOM_HOTE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/;
 // Nom remonté par un agent : son nom d'hôte, ou le nom donné à l'inscription
 // (« MacBook Pro ») que les agents jusqu'à 2.0.4 envoient à sa place. Mêmes
 // caractères que ce nom (enroll.controler) : lettres, chiffres, espace, . _ ( ) -.
+// Nom d'un parc : il entre dans les scripts d'inscription (exécutés en root),
+// donc les seuls caractères que ceux-ci admettent (enroll.controler), 40 au plus.
+const NOM_PARC = /^[\p{L}\p{N}](?:[\p{L}\p{N} ._()-]{0,38}[\p{L}\p{N}.)])?$/u;
 const NOM_POSTE = /^[\p{L}\p{N}](?:[\p{L}\p{N} ._()-]{0,78}[\p{L}\p{N}.)])?$/u;
 
 // Un refus d'accès décidé ici plutôt que par le socle : l'aiguillage le
@@ -48,7 +51,7 @@ const S = {
   power: { action: { type: 'chaine', requis: true, parmi: Object.keys(redfish.ACTIONS) } },
   hote: {
     host: { type: 'chaine', requis: true, max: 60, motif: NOM_HOTE }, ip: { type: 'chaine', max: 45, defaut: '' },
-    site: { type: 'chaine', max: 40, defaut: 'Matériel' }, ctype: { type: 'chaine', requis: true, parmi: Object.keys(TYPES) },
+    site: { type: 'chaine', max: 40, defaut: 'Matériel', motif: NOM_PARC }, ctype: { type: 'chaine', requis: true, parmi: Object.keys(TYPES) },
     target: { type: 'chaine', requis: true, max: 500 }, label: { type: 'chaine', max: 40, defaut: '' }, embed: { type: 'booleen', defaut: true },
   },
   auto: {
@@ -61,6 +64,8 @@ const S = {
   // Site et nom sont contrôlés à part (enroll.controler) : ils entrent dans un script root.
   inscription: { site: { type: 'chaine', max: 60, defaut: 'Agents' }, name: { type: 'chaine', max: 60, defaut: '' }, relay: { type: 'booleen', defaut: false } },
   echange: { code: { type: 'chaine', requis: true, max: 40 } },
+  parc: { nom: { type: 'chaine', requis: true, max: 40, motif: NOM_PARC } },
+  deplacement: { parc: { type: 'chaine', requis: true, max: 16 } },
   // Paramètres de requête : un paramètre qu'une route ne déclare pas est refusé.
   requetePin: { idx: { type: 'entier', min: 0, max: 7, defaut: 0 }, redfish: { type: 'chaine', parmi: ['1'] } },
   activation: { enabled: { type: 'chaine', requis: true, parmi: ['true', 'false'] } },
@@ -149,6 +154,48 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
   r.get('/api/state', ctx => { if (!estLecteur(ctx)) session(ctx); return etatParc(); }, { hub: true, role: 'lecture' });
   r.get('/api/summary', ctx => { if (!estLecteur(ctx)) session(ctx); return parc.resume(); }, { hub: true, role: 'lecture' });
   r.post('/api/collect', ctx => { session(ctx, { role: 'membre' }); for (const l of agents.collecter()) flux.pousser({ t: 'flux', ...l }); return etatParc(); }, { role: 'membre' });
+
+  // Parcs : des groupes de postes, chacun par son nom. Créer un parc ou y
+  // ranger un poste est à la portée d'un membre ; renommer ou supprimer un
+  // parc touche tous ses postes : administrateur. Un parc non vide ne se
+  // supprime pas.
+  const parcDe = ref => parc.parcParRef(ref) || (() => { throw new ErreurHttp(404, 'Parc introuvable.'); })();
+  const nomLibre = (nom, sauf = null) => { const p = parc.parcParNom(nom); if (p && p.id !== sauf) throw new ErreurHttp(409, 'Un parc porte déjà ce nom.'); };
+  r.get('/api/parcs', ctx => { session(ctx); return { parcs: parc.parcs() }; }, { role: 'lecture' });
+  r.post('/api/parcs', async ctx => {
+    const s = session(ctx, { role: 'membre' });
+    const b = await corps(ctx, S.parc);
+    nomLibre(b.nom);
+    const p = parc.assurerParc(b.nom);
+    journal.ecrire({ acteur: s.compte, action: 'parc.cree', objet: p.nom, ip: ctx.ip });
+    return { ...etatParc(), parc: p.ref };
+  }, { role: 'membre' });
+  r.patch('/api/parcs/:ref', async ctx => {
+    const s = session(ctx, { role: 'admin' });
+    const p = parcDe(ctx.params.ref);
+    const b = await corps(ctx, S.parc);
+    nomLibre(b.nom, p.id);
+    const avant = parc.renommerParc(p.id, b.nom);
+    journal.ecrire({ acteur: s.compte, action: 'parc.renomme', objet: b.nom, ip: ctx.ip, details: { avant } });
+    return etatParc();
+  }, { role: 'admin' });
+  r.del('/api/parcs/:ref', ctx => {
+    const s = session(ctx, { role: 'admin' });
+    const p = parcDe(ctx.params.ref);
+    if (parc.postesDuParc(p.nom)) throw new ErreurHttp(409, 'Ce parc contient encore des postes : range-les ailleurs d\'abord.');
+    db.prepare('DELETE FROM parcs WHERE id = ?').run(p.id);
+    journal.ecrire({ acteur: s.compte, action: 'parc.supprime', objet: p.nom, ip: ctx.ip });
+    return etatParc();
+  }, { role: 'admin' });
+  r.put('/api/machines/:ref/parc', async ctx => {
+    const s = session(ctx, { role: 'membre' });
+    const id = machine(ctx.params.ref);
+    const b = await corps(ctx, S.deplacement);
+    const p = parcDe(b.parc);
+    db.prepare('UPDATE machines SET site = ? WHERE id = ?').run(p.nom, id);
+    journal.ecrire({ acteur: s.compte, action: 'machine.rangee', objet: parc.machine(id).host, ip: ctx.ip, details: { parc: p.nom } });
+    return etatParc();
+  }, { role: 'membre' });
 
   // Flux d'activité en direct (SSE), à la place du sondage de la 1.x.
   r.get('/api/activite', ctx => {
@@ -318,8 +365,9 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
     let entrees; try { entrees = normaliser([{ type: b.ctype, target: b.target, label: b.label, embed: b.embed }], nodeValide); } catch (e) { throw new ErreurHttp(422, e.message); }
     if (db.prepare('SELECT 1 FROM machines WHERE host = ?').get(b.host)) throw new ErreurHttp(409, 'Une machine porte déjà ce nom.');
     const ref = crypto.randomBytes(12).toString('base64url');
+    const site = parc.assurerParc(b.site || 'Matériel').nom;
     db.prepare(`INSERT INTO machines(ref, host, ip, site, os, oskind, role, source, consoles, last_report, cree)
-      VALUES(?,?,?,?,?,?,?,'kvm',?,?,?)`).run(ref, b.host, b.ip || '—', b.site || 'Matériel', 'Carte d\'administration', 'hw', 'matériel', JSON.stringify(entrees), Date.now() / 1000, Date.now() / 1000);
+      VALUES(?,?,?,?,?,?,?,'kvm',?,?,?)`).run(ref, b.host, b.ip || '—', site, 'Carte d\'administration', 'hw', 'matériel', JSON.stringify(entrees), Date.now() / 1000, Date.now() / 1000);
     journal.ecrire({ acteur: ctx.session.compte, action: 'machine.ajoutee', objet: b.host, ip: ctx.ip, details: { type: b.ctype } });
     return etatParc();
   }, { role: 'admin' });
@@ -436,14 +484,16 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
     session(ctx, { role: 'membre' });
     const b = await corps(ctx, S.inscription);
     const base = baseUrl(ctx);
-    const site = b.site.trim() || 'Agents';
     const nom = b.name.trim();
     const relais = b.relay;
     // Contrôlé avant de créer le code : ces valeurs finiront dans un script root.
-    const defaut = enroll.controler(base, { site, nom });
+    const demande = b.site.trim() || 'Agents';
+    const defaut = enroll.controler(base, { site: demande, nom }) || (NOM_PARC.test(demande) ? null : 'Nom de parc : lettres, chiffres, espace, point, tiret, parenthèses (40 au plus).');
     if (defaut) throw new ErreurHttp(422, defaut);
+    // Le parc choisi, sous son nom exact (créé s'il n'existait pas encore).
+    const site = parc.assurerParc(demande).nom;
     const { code, expire_dans } = agents.nouveauCode({ site, nom, relais });
-    const sites = db.prepare("SELECT DISTINCT site FROM machines WHERE site <> '' ORDER BY site").all().map(s => s.site);
+    const sites = parc.parcs().map(p => p.nom);
     const commands = {}, downloads = {};
     for (const os of ['windows', 'macos', 'linux']) {
       commands[os] = enroll.uneLigne(os, base, code, { site, nom, relais });

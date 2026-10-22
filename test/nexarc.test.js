@@ -175,7 +175,7 @@ test('autorisation : chaque route balayée sans session, en lecture seule et en 
   }
   assert.deepEqual(sansRole, [], 'chaque route non publique déclare son rôle');
   assert.deepEqual(ecarts, []);
-  assert.equal(balayees, 28, 'routes non publiques balayées');
+  assert.equal(balayees, 33, 'routes non publiques balayées');
   // Les seules routes sans session : la sonde de santé, et ce qu'un agent
   // appelle avec son code d'inscription ou son jeton (vérifiés dans la route).
   const publiques = s.api.routeur.routes.filter(r => r.options?.public).map(r => `${r.methode} ${cheminDe(r)}`).sort();
@@ -186,7 +186,7 @@ test('autorisation : chaque route balayée sans session, en lecture seule et en 
   // La politique écrite ici plutôt que relue dans le routeur : une route
   // d'administration relâchée par erreur fait échouer cet essai.
   const admin = s.api.routeur.routes.filter(r => r.options?.role === 'admin').map(r => `${r.methode} ${cheminDe(r)}`).sort();
-  assert.deepEqual(admin, ['DELETE /api/automations/AAAAAAAAAAAAAAAA', 'DELETE /api/machines/AAAAAAAAAAAAAAAA', 'GET /api/machines/AAAAAAAAAAAAAAAA/pin', 'POST /api/hosts', 'POST /api/machines/AAAAAAAAAAAAAAAA/pin',
+  assert.deepEqual(admin, ['DELETE /api/automations/AAAAAAAAAAAAAAAA', 'DELETE /api/machines/AAAAAAAAAAAAAAAA', 'DELETE /api/parcs/AAAAAAAAAAAAAAAA', 'GET /api/machines/AAAAAAAAAAAAAAAA/pin', 'PATCH /api/parcs/AAAAAAAAAAAAAAAA', 'POST /api/hosts', 'POST /api/machines/AAAAAAAAAAAAAAAA/pin',
     'PUT /api/machines/AAAAAAAAAAAAAAAA/consoles', 'PUT /api/machines/AAAAAAAAAAAAAAAA/mesh-node', 'PUT /api/machines/AAAAAAAAAAAAAAAA/redfish']);
   // Aucune console n'est plus servie sous l'origine de NEXARC.
   assert.equal((await membre.get('/console/AAAAAAAAAAAAAAAA/0/')).status, 404);
@@ -484,6 +484,49 @@ test('réveil réseau : paquet magique bien formé et capturé ; sans relais en 
   const idRelais = s.parc.idDe(refMachineParHote('relais-a'));
   assert.deepEqual({ ...s.parc.db.prepare("SELECT kind, payload FROM taches WHERE machine_id = ? AND kind = 'wol'").get(idRelais) }, { kind: 'wol', payload: '01:23:45:67:89:ab|198.51.100.255' });
   assert.equal(s.parc.db.prepare("SELECT COUNT(*) n FROM socle_journal WHERE action = 'reveil' AND objet = 'poste-a-reveiller'").get().n, 1, 'réveil journalisé');
+});
+
+test('parcs : créés par un membre, inscription rangée dans le parc choisi, renommés et supprimés vides par un administrateur', async () => {
+  const cree = await membre.post('/api/parcs', { nom: 'Client Dupuis (VLAN 20)' });
+  assert.equal(cree.status, 200, JSON.stringify(cree.json));
+  const ref = cree.json.parc;
+  assert.ok(cree.json.parcs.some(p => p.id === ref && p.nom === 'Client Dupuis (VLAN 20)' && p.postes === 0));
+  assert.equal((await membre.post('/api/parcs', { nom: 'client dupuis (vlan 20)' })).status, 409, 'un nom, un parc, sans égard à la casse');
+  for (const nom of ['', ' devant', "l'apostrophe", 'a;b', 'x'.repeat(41), 'dollar$']) assert.equal((await membre.post('/api/parcs', { nom })).status, 400, `nom refusé : ${nom}`);
+  assert.equal((await lecteur.post('/api/parcs', { nom: 'Lecture' })).status, 403);
+  // Inscription dans ce parc (casse libre) : le code porte son nom exact.
+  const info = (await membre.post('/api/enroll/info', { site: 'client dupuis (vlan 20)' })).json;
+  assert.equal(info.site, 'Client Dupuis (VLAN 20)');
+  assert.ok(info.sites.includes('Client Dupuis (VLAN 20)'));
+  const jeton = (await membre.post('/api/enroll/config', { code: info.code }, { origine: null })).json.token;
+  assert.equal((await membre.req('POST', '/api/ingest', { hostname: 'poste-parc', oskind: 'win', cpu: 1, ram: 1, disk: 1 }, { entetes: { 'x-agent-token': jeton }, origine: null })).status, 200);
+  const mref = refMachineParHote('poste-parc');
+  let parcs = (await membre.get('/api/parcs')).json.parcs;
+  assert.equal(parcs.find(p => p.id === ref).postes, 1);
+  // Un site inconnu à l'inscription devient un parc.
+  assert.equal((await membre.post('/api/enroll/info', { site: 'Atelier' })).json.site, 'Atelier');
+  assert.ok((await membre.get('/api/parcs')).json.parcs.some(p => p.nom === 'Atelier'));
+  // Ranger le poste ailleurs : un membre ; parc inconnu → 404.
+  const atelier = (await membre.get('/api/parcs')).json.parcs.find(p => p.nom === 'Atelier').id;
+  assert.equal((await membre.put(`/api/machines/${mref}/parc`, { parc: 'AAAAAAAAAAAAAAAA' })).status, 404);
+  assert.equal((await lecteur.put(`/api/machines/${mref}/parc`, { parc: atelier })).status, 403);
+  const range = await membre.put(`/api/machines/${mref}/parc`, { parc: atelier });
+  assert.equal(range.status, 200);
+  assert.equal(range.json.machines.find(m => m.id === mref).site, 'Atelier');
+  // Renommer : administrateur ; postes et automatisations suivent.
+  const auto = (await membre.post('/api/automations', { nom: 'Inventaire atelier', kind: 'inventory', cible: 'site', cible_val: 'Atelier' })).json.automations.find(a => a.nom === 'Inventaire atelier');
+  assert.equal((await membre.req('PATCH', `/api/parcs/${atelier}`, { nom: 'Atelier B' })).status, 403);
+  const renomme = await admin.req('PATCH', `/api/parcs/${atelier}`, { nom: 'Atelier B' });
+  assert.equal(renomme.status, 200, JSON.stringify(renomme.json));
+  assert.equal(renomme.json.machines.find(m => m.id === mref).site, 'Atelier B');
+  assert.equal(renomme.json.autos.find(a => a.id === auto.id).cible_val, 'Atelier B');
+  assert.equal((await admin.req('PATCH', `/api/parcs/${atelier}`, { nom: 'Client Dupuis (VLAN 20)' })).status, 409);
+  // Supprimer : vide seulement.
+  assert.equal((await admin.del(`/api/parcs/${atelier}`)).status, 409, 'un parc non vide reste');
+  assert.equal((await admin.del(`/api/parcs/${ref}`)).status, 200);
+  parcs = (await membre.get('/api/parcs')).json.parcs;
+  assert.ok(!parcs.some(p => p.id === ref));
+  assert.deepEqual(s.parc.db.prepare("SELECT action FROM socle_journal WHERE action LIKE 'parc.%' ORDER BY n").all().map(l => l.action), ['parc.cree', 'parc.renomme', 'parc.supprime'], 'journalisé');
 });
 
 test('réveil réseau : sans relais, le paquet part de MapMyLAN (jeton dérivé, MAC seule) ; ses refus sont dits', async () => {
