@@ -788,9 +788,9 @@ async function dialogueInscription(relais, { parc = '' } = {}) {
   const peindreOs = () => osTabs.replaceChildren(...[['windows', 'Windows'], ['macos', 'macOS'], ['linux', 'Linux']].map(([v, l]) => h('button', { class: 'view' + (os === v ? ' on' : ''), type: 'button', text: l, onclick: () => { os = v; peindreOs(); peindreZone(); } })));
   const copier = cmd => navigator.clipboard?.writeText(cmd).then(() => toast('Commande copiée.'), () => toast('Copie impossible.', true));
   const AIDE = {
-    windows: { fichier: 'Télécharger l’installateur (.exe)', etapes: 'Double-clique sur le fichier : Windows demande l’accord d’un administrateur, puis l’agent s’installe, Python compris s’il manque. L’installateur n’est pas signé : si SmartScreen s’affiche, « Informations complémentaires » puis « Exécuter quand même ».', ligne: 'Ou copie la commande et colle-la dans PowerShell, ouvert en administrateur :' },
-    macos: { fichier: 'Télécharger l’installateur (.zip)', etapes: 'Ouvre l’archive, puis double-clique sur « Installer NEXARC ». Le fichier n’est pas signé : si macOS refuse de l’ouvrir, Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ». Le Terminal demande le mot de passe d’un administrateur. Sans Python 3 sur le Mac, lance d’abord « xcode-select --install ». La commande à copier évite ces étapes.', ligne: 'Ou copie la commande et colle-la dans le Terminal (le plus simple) :' },
-    linux: { fichier: 'Télécharger le script (.sh)', etapes: 'Lance-le avec « sudo bash installer-nexarc.sh ». Debian, Ubuntu, Fedora et Arch : Python est installé s’il manque.', ligne: 'Ou copie la commande et colle-la dans un terminal :' },
+    windows: { fichier: 'Télécharger l’installateur (.exe)', etapes: 'Double-clique sur le fichier : Windows demande l’accord d’un administrateur, puis l’agent s’installe, Python compris s’il manque. L’installateur n’est pas signé : si SmartScreen s’affiche, « Informations complémentaires » puis « Exécuter quand même ».', ligne: 'La commande copiée se colle dans PowerShell, ouvert en administrateur.' },
+    macos: { fichier: 'Télécharger l’installateur (.zip)', etapes: 'Ouvre l’archive, puis double-clique sur « Installer NEXARC ». Le fichier n’est pas signé : si macOS refuse de l’ouvrir, Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ». Le Terminal demande le mot de passe d’un administrateur. Sans Python 3 sur le Mac, lance d’abord « xcode-select --install ». La commande à copier évite ces étapes.', ligne: 'La commande copiée se colle dans le Terminal : c’est le plus simple.' },
+    linux: { fichier: 'Télécharger le script (.sh)', etapes: 'Lance-le avec « sudo bash installer-nexarc.sh ». Debian, Ubuntu, Fedora et Arch : Python est installé s’il manque.', ligne: 'La commande copiée se colle dans un terminal.' },
   };
   const peindreZone = () => {
     if (!info) { zone.replaceChildren(h('p', { class: 'hint', text: 'Génération du code…' })); return; }
@@ -803,13 +803,15 @@ async function dialogueInscription(relais, { parc = '' } = {}) {
     zone.replaceChildren(...[
       locale ? h('div', { class: 'note warn mt10' }, icone('alerte'), h('div', { text: `Les postes joindraient NEXARC à ${info.base_url}, une adresse qui ne mène qu’à ta propre machine. Renseigne « Adresse publique de NEXARC » dans ses réglages du Hub (son adresse sur le réseau, ex. http://192.0.2.10:8090), puis rouvre ce dialogue.` })) : null,
       !locale && info.base_url.startsWith('http:') ? h('p', { class: 'hint', text: 'NEXARC est joint en HTTP : le jeton de l’agent passe en clair sur le réseau. Sers-le en HTTPS dès que possible (action H1 de SECURITY.md).' }) : null,
-      h('div', { class: 'installe mt10' },
+      // Deux chemins côte à côte : le fichier à lancer, ou la commande (non
+      // affichée) que le bouton copie, prête à coller.
+      h('div', { class: 'installe-choix mt10' },
         h('a', { class: 'btn solid', href: telechargement.pathname + telechargement.search, download: '' }, icone('telecharge', 15), a.fichier),
-        h('p', { class: 'hint', text: a.etapes })),
-      h('p', { class: 'hint mt14', text: a.ligne }),
-      // La commande n'est pas affichée : un bouton la copie, prête à coller.
+        h('span', { class: 'installe-ou', text: 'ou' }),
+        h('button', { class: 'btn', type: 'button', 'data-commande': cmd, onclick: () => copier(cmd) }, icone('copie', 14), 'Copier la commande')),
+      h('p', { class: 'hint', text: a.etapes }),
+      h('p', { class: 'hint', text: a.ligne }),
       h('div', { class: 'rowline9' },
-        h('button', { class: 'btn', type: 'button', 'data-commande': cmd, onclick: () => copier(cmd) }, icone('copie', 14), 'Copier'),
         h('button', { class: 'btn flat', type: 'button', onclick: () => { info = null; peindreZone(); rafraichirInfo(); } }, icone('correctif', 14), 'Nouveau code')),
       h('p', { class: 'hint', text: `Un code sert à un seul poste et expire dans ${Math.round(info.expire_dans / 60)} min ; installateur et commande portent le même. Pour un autre poste : « Nouveau code ».` })].filter(Boolean));
   };

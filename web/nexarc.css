@@ -143,3 +143,12 @@ td.cache-l{white-space:nowrap}
 @media (max-width:560px){.remote-panneau{grid-template-columns:minmax(0,1fr)}}
 /* Barre de la console à l'étroit : les libellés partent, les pictogrammes restent. */
 @media (max-width:480px){.remote-bar .remote-etiq{display:none}.remote-bar{gap:6px;padding:8px 10px}}
+
+/* Ajouter un poste : télécharger ou copier, côte à côte ; empilés à l'étroit. */
+.installe-choix{display:flex;align-items:center;gap:10px}
+.installe-ou{color:var(--muted);font-size:12.5px;flex:none}
+@container dialogue (max-width:440px){
+  .installe-choix{flex-direction:column;align-items:stretch;gap:6px}
+  .installe-choix .btn{justify-content:center}
+  .installe-ou{text-align:center}
+}
