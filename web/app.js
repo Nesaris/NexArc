@@ -7,6 +7,7 @@ import {
   Api, porte, pageSecurite, pageComptes, h, icone, basculeTheme, appliquerTheme,
   toast, confirmer, dialogue, feuille, ajouterPictos,
 } from '/socle/compte.js';
+import { ouvrirCadreDistant, ouvrirVncDistant } from '/ecran-distant.js';
 
 appliquerTheme();
 const SERVICE = 'NEXARC';
@@ -654,34 +655,12 @@ async function ouvrirConsole(m, idx) {
   }
 }
 
-function ouvrirCadre(url, titre) {
-  const cadre = h('iframe', { class: 'remote-frame', src: url, allow: 'fullscreen; clipboard-read; clipboard-write', referrerpolicy: 'no-referrer' });
-  const scrim = h('div', { class: 'remote-scrim on' }, h('div', { class: 'remote-shell' },
-    h('div', { class: 'remote-bar' }, h('span', { class: 'remote-dot' }), h('b', { text: titre }), h('span', { class: 'grow' }),
-      h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener' }, 'Nouvel onglet'),
-      h('button', { class: 'btn solid', type: 'button', onclick: () => scrim.remove() }, icone('croix', 15), 'Fermer')), cadre));
-  document.body.append(scrim);
-}
-
+// La fenêtre d'une console : pleins écrans, barre cachée, menu des touches
+// et du presse-papiers (VNC), comme l'écran de ProxLab.
+function ouvrirCadre(url, titre) { ouvrirCadreDistant(url, titre); }
 async function ouvrirVnc(m, idx, label) {
-  const ecran = h('div', { class: 'remote-frame vncscreen' });
-  const statut = h('span', { class: 'grow dim fs12' });
-  let rfb = null;
-  const scrim = h('div', { class: 'remote-scrim on' }, h('div', { class: 'remote-shell' },
-    h('div', { class: 'remote-bar' }, h('span', { class: 'remote-dot' }), h('b', { text: `${label} · ${m.host}` }), statut,
-      h('button', { class: 'btn', type: 'button', text: 'Ctrl+Alt+Suppr', onclick: () => { try { rfb?.sendCtrlAltDel(); } catch { /* rien */ } } }),
-      h('button', { class: 'btn solid', type: 'button', onclick: () => { try { rfb?.disconnect(); } catch { /* rien */ } scrim.remove(); } }, icone('croix', 15), 'Fermer')), ecran));
-  document.body.append(scrim);
-  statut.textContent = 'connexion…';
-  try {
-    const { default: RFB } = await import('/vendor/novnc/core/rfb.js');
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    rfb = new RFB(ecran, `${proto}://${location.host}/vnc/${m.id}/${idx}`, {});
-    rfb.scaleViewport = true; rfb.clipViewport = false;
-    rfb.addEventListener('connect', () => { statut.textContent = 'connecté'; });
-    rfb.addEventListener('disconnect', e => { statut.textContent = e.detail?.clean ? 'déconnecté' : 'connexion perdue'; });
-    rfb.addEventListener('securityfailure', () => { statut.textContent = 'échec d\'authentification'; });
-  } catch { statut.textContent = 'noVNC indisponible'; }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  await ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/${idx}`, titre: `${label} · ${m.host}` });
 }
 
 async function epinglerConsole(m, idx) {
