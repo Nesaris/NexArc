@@ -152,6 +152,9 @@ Deux commits, un sujet chacun : motif du nom remonté aligné sur celui de l'ins
 ## Suivi du 2026-10-22 (2.2.0)
 Parcs : méthodes rangées dans `Parc` (`parcs`, `assurerParc`, `renommerParc`), routes au style des voisines (`session`, `corps`, `journal.ecrire`, `ErreurHttp`). Interface : `tableauPostes` partagé entre Postes et un parc, `SOUS_PAGES` remplace le cas particulier de la fiche dans `aller`, `champParc` et `choisirParc` servent l'inscription, le matériel, les automatisations et la fiche. 50 essais du service et 23 de l'agent, verts.
 
+## Suivi du 2026-10-22 (2.3.0)
+La fenêtre des consoles quitte `web/app.js` pour `web/ecran-distant.js` : une coquille commune (barre, menu, message, pleins écrans) servie au cadre et à VNC, au lieu de deux fenêtres écrites à part ; `app.js` n'en garde que l'appel. Le vocabulaire (`dire`, `combo`, `taper`, `collerIci`) et le rythme de frappe reprennent ceux de l'écran de ProxLab. 50 essais du service et 23 de l'agent, verts ; nouvel outil `outils/parcours-ecran.mjs`.
+
 ## Verification (chapter 49)
 - [x] Full suite passes and matches the baseline — les 109 essais de la référence, verts avant et après la passe, plus 21 ajoutés depuis (130 en tout), relancés à la génération de ce fichier
 - [x] Public API diff empty — inventaire de la surface publique identique sur la passe ; depuis, le renommage du service et des ajouts déclarés, aucun retrait
