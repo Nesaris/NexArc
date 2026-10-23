@@ -152,3 +152,14 @@ td.cache-l{white-space:nowrap}
   .installe-choix .btn{justify-content:center}
   .installe-ou{text-align:center}
 }
+
+/* Le mode d'emploi de l'inscription, déplié à la demande. */
+.installe-aide{margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--well);font-size:12.5px;line-height:1.55;color:var(--muted)}
+.installe-aide ol{margin:0;padding-left:18px}
+.installe-aide li+li{margin-top:4px}
+.installe-aide p{margin-top:8px}
+.installe-liens{display:flex;gap:6px;flex-wrap:nowrap}
+@container dialogue (max-width:440px){
+  .installe-liens{flex-direction:column;align-items:stretch}
+  .installe-liens .btn{justify-content:center}
+}
