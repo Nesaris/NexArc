@@ -87,6 +87,11 @@ await page.getByRole('button', { name: 'Ajouter un poste' }).first().click();
 await page.getByRole('dialog').waitFor();
 await page.waitForTimeout(400);
 await controle('inscription');
+// Le mode d'emploi, replié par défaut, se déplie sous les deux boutons.
+await page.getByRole('dialog').getByRole('button', { name: 'Comment installer ?' }).click();
+await page.getByRole('dialog').locator('.installe-aide li').first().waitFor();
+await controle('inscription-aide');
+await page.getByRole('dialog').getByRole('button', { name: 'Masquer l’aide' }).click();
 // Chaque système a sa consigne et son installateur : chacun contrôlé à chaque largeur.
 for (const [onglet, nom] of [['macOS', 'inscription-macos'], ['Linux', 'inscription-linux']]) {
   await page.getByRole('dialog').getByRole('button', { name: onglet, exact: true }).click();
