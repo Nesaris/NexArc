@@ -158,6 +158,9 @@ La fenêtre des consoles quitte `web/app.js` pour `web/ecran-distant.js` : une c
 ## Suivi du 2026-10-22 (2.3.1)
 Page servie à part dans `src/main.js` (gabarit lu une fois au démarrage) ; `ecran-distant.js` chargé à la demande, à la version de la page. Inscription : téléchargement et copie côte à côte, séparés par « ou ». 50 essais du service et 23 de l'agent, verts.
 
+## Suivi du 2026-10-23 (2.3.2)
+Aide de l'inscription en étapes (`AIDE[os].etapes`, une liste) affichée à la demande ; plus de paragraphes d'aide permanents. Parcours : 126 écrans × largeurs, 0 défaut.
+
 ## Verification (chapter 49)
 - [x] Full suite passes and matches the baseline — les 109 essais de la référence, verts avant et après la passe, plus 21 ajoutés depuis (130 en tout), relancés à la génération de ce fichier
 - [x] Public API diff empty — inventaire de la surface publique identique sur la passe ; depuis, le renommage du service et des ajouts déclarés, aucun retrait

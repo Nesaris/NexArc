@@ -63,6 +63,8 @@ Suivi du 2026-10-22 (2.3.0) : fenêtre des consoles (`web/ecran-distant.js`). C�
 
 Suivi du 2026-10-22 (2.3.1) : la page est servie par NEXARC lui-même (`src/main.js:117`), avec le même nonce, la même gamme validée et `Cache-Control: no-store` que le socle ; la version est inscrite une fois au démarrage dans l'adresse de ses fichiers (`src/main.js:25`). Constat : le relais Cloudflare devant l'instance remplace le `no-cache` des fichiers par `max-age=14400`, si bien que le navigateur gardait l'interface d'avant une mise à jour jusqu'à quatre heures. Action humaine : régler « Browser Cache TTL » sur « Respect Existing Headers » dans Cloudflare. Aucun contrôle ne change de statut. Essais : 50 du service (l'essai des en-têtes vérifie la version dans la page et `no-store`) ; parcours du navigateur : 119 écrans × largeurs, 0 défaut ; écran distant : 0 écart.
 
+Suivi du 2026-10-23 (2.3.2) : interface seulement — le mode d'emploi de l'inscription est replié derrière « Comment installer ? ». Aucune route, aucun contrôle ne change. Parcours du navigateur : 126 écrans × largeurs, 0 défaut, 0 erreur console.
+
 ## Control status
 | ID | Severity | Status | Evidence | Notes |
 |---|---|---|---|---|
