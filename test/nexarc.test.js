@@ -1321,6 +1321,16 @@ test('thème : la page porte la gamme posée par la page Thème du Hub ; SOMA ho
   assert.equal(JSON.parse(lire('hub.json')).minHubVersion, '0.7.0', '{{hub.theme}} vient avec le Hub 0.7.0');
 });
 
+test('manifeste : relais de confiance du réseau du Hub par défaut, HTTPS reconnu derrière Relay', () => {
+  const manifeste = JSON.parse(fs.readFileSync(new URL('../hub.json', import.meta.url), 'utf8'));
+  // Derrière Relay (réseau Docker du Hub), le HTTPS n'est reconnu que si le relais est de confiance.
+  const proxys = manifeste.config.find(c => c.key === 'SOCLE_PROXYS').default;
+  assert.ok(proxys, 'relais de confiance vide : NEXARC se croirait en HTTP derrière Relay');
+  const relais = new net.BlockList();
+  for (const p of proxys.split(',')) { const [a, l] = p.trim().split('/'); relais.addSubnet(a, Number(l)); }
+  assert.ok(relais.check('172.18.0.5') && !relais.check('10.0.0.11'), 'le réseau Docker du Hub, pas le réseau local');
+});
+
 test('comptes depuis le Hub : manifeste et Compose relient le jeton d’administration ; ni le jeton de service ni lui n’ouvrent l’autre côté', async () => {
   const lire = f => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   const manifeste = JSON.parse(lire('hub.json'));
