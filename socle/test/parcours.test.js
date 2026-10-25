@@ -132,6 +132,30 @@ test('renfort : exigé après cinq minutes, avec le facteur le plus fort', async
   assert.equal((await admin.get('/api/dangereux')).status, 200);
 });
 
+test('renfort : une clé liée à un autre domaine ne bloque pas, le domaine d’une clé s’apprend à l’usage', async () => {
+  assert.deepEqual(s.db.prepare('SELECT DISTINCT rp FROM socle_cles').all().map(l => l.rp), ['localhost'], 'appris à l’inscription et à l’usage');
+  // Le service a changé d'adresse : la clé n'est présentée qu'à son ancien domaine.
+  s.db.prepare("UPDATE socle_cles SET rp = 'ancien.exemple'").run();
+  avance(6 * 60e3);
+  let r = await admin.get('/api/dangereux');
+  assert.equal(r.status, 403);
+  assert.deepEqual(r.json.details.methodes, ['totp'], 'le facteur le plus fort utilisable ici');
+  const o = await admin.post('/api/compte/renfort/options');
+  assert.equal(o.status, 400, 'pas de clé d’accès à proposer ici');
+  r = await admin.post('/api/compte/renfort', { methode: 'totp', code: codeTotp(secretAdmin, 1) });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal((await admin.get('/api/dangereux')).status, 200);
+  // Clé d'avant (domaine inconnu) : elle compte, et reste exigée.
+  s.db.prepare('UPDATE socle_cles SET rp = NULL').run();
+  avance(6 * 60e3);
+  r = await admin.get('/api/dangereux');
+  assert.deepEqual(r.json.details.methodes, ['cle']);
+  const o2 = await admin.post('/api/compte/renfort/options');
+  r = await admin.post('/api/compte/renfort', { methode: 'cle', reponse: cleAdmin.signer(o2.json, admin.origine) });
+  assert.equal(r.status, 200);
+  assert.deepEqual(s.db.prepare('SELECT DISTINCT rp FROM socle_cles').all().map(l => l.rp), ['localhost']);
+});
+
 test('facteurs : jamais sous la politique, retrait sous renfort, deux clés nommées', async () => {
   const listeAvant = (await admin.get('/api/compte/securite')).json.cles;
   let r = await admin.del(`/api/compte/cles/${listeAvant[0].id}`);
