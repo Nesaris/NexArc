@@ -361,7 +361,7 @@ async function pageAlertes() {
           h('td', { class: 'mono cache-s', text: ageDe(a.cree) }),
           h('td', { class: 'fin' }, etatAck(a))))
           : h('tr', {}, h('td', { colspan: 5, class: 'vide', text: 'Aucune alerte ouverte.' })))))),
-    h('div', { class: 'card mt14' }, h('header', {}, h('h2', { text: 'Résolues cette semaine' }), h('span', { class: 'note', text: String(resolues.length) })),
+    h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Résolues cette semaine' }), h('span', { class: 'note', text: String(resolues.length) })),
       h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Alerte' }), h('th', { class: 'cache-m', text: 'Poste' }), h('th', { text: 'Résolue' }), h('th', { class: 'cache-s', text: 'Durée' }))),
         h('tbody', {}, resolues.length ? resolues.map(a => h('tr', {},
           h('td', {}, h('div', {}, h('b', { class: 'fw5', text: LIBELLES_REGLES[a.regle] || 'Alerte' }), h('small', { class: 'dim bloc', text: a.txt }))),
