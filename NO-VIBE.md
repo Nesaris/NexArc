@@ -161,6 +161,9 @@ Page servie à part dans `src/main.js` (gabarit lu une fois au démarrage) ; `ec
 ## Suivi du 2026-10-23 (2.3.2)
 Aide de l'inscription en étapes (`AIDE[os].etapes`, une liste) affichée à la demande ; plus de paragraphes d'aide permanents. Parcours : 126 écrans × largeurs, 0 défaut.
 
+## Suivi du 2026-10-25 (2.3.3)
+Socle 6f2c864 embarqué sans adaptation du code (ses nouveaux paramètres sont facultatifs). `.grille` n'est plus redéfinie dans `web/nexarc.css` : la règle du socle, à `--ecart`, sert seule ; `.metricgrid` suit le même écart, et la carte « Résolues cette semaine » prend l'espacement de la page au lieu de `.mt14`. Essai du relais de confiance écrit comme celui de ProxLab. 51 essais du service, 77 du socle et 23 de l'agent, verts ; parcours : 126 écrans × largeurs par gamme, 0 défaut.
+
 ## Verification (chapter 49)
 - [x] Full suite passes and matches the baseline — les 109 essais de la référence, verts avant et après la passe, plus 21 ajoutés depuis (130 en tout), relancés à la génération de ce fichier
 - [x] Public API diff empty — inventaire de la surface publique identique sur la passe ; depuis, le renommage du service et des ajouts déclarés, aucun retrait
