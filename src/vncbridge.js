@@ -67,6 +67,42 @@ async function authServeur(lecteur, tcp, motDePasse) {
   }
 }
 
+// Une connexion VNC à soi, pour taper (frappe du socle) : poignée faite ici
+// (mot de passe compris), ClientInit partagé — la console ouverte dans un
+// navigateur reste ouverte —, ServerInit lu, puis rien que des touches :
+// keysyms seuls, que le serveur change en touches (web/clavier.js du socle).
+export async function lienFrappe(host, port, { motDePasse = '', delai = 8000 } = {}) {
+  if (hoteInterdit(host)) throw new Error('adresse interdite');
+  const tcp = net.connect({ host, port, lookup: lookupGarde });
+  tcp.setNoDelay(true);
+  const lecteur = new Lecteur();
+  let poignee = true;
+  const fins = [];
+  tcp.on('data', d => { if (poignee) lecteur.pousser(d); });       // après la poignée : rien à lire
+  tcp.on('close', () => { lecteur.finir(); for (const f of fins) f(); });
+  tcp.on('error', () => { /* la fermeture suit */ });
+  const minuterie = setTimeout(() => tcp.destroy(), delai);
+  try {
+    await new Promise((res, rej) => { tcp.once('connect', res); tcp.once('error', rej); });
+    await authServeur(lecteur, tcp, motDePasse);
+    tcp.write(Buffer.from([1]));
+    const init = await lecteur.lire(24);
+    const n = init.readUInt32BE(20);
+    if (n > 4096) throw new Error('nom de bureau démesuré');
+    if (n) await lecteur.lire(n);
+  } catch (e) {
+    tcp.destroy();
+    throw new Error(`console VNC injoignable (${String(e.message || e).slice(0, 80)})`);
+  } finally { clearTimeout(minuterie); }
+  poignee = false;
+  lecteur.reste();
+  return {
+    envoyer: ({ keysym, bas }) => { const b = Buffer.alloc(8); b[0] = 4; b[1] = bas ? 1 : 0; b.writeUInt32BE(keysym >>> 0, 4); tcp.write(b); },
+    fermer: () => tcp.end(),
+    surFin: f => fins.push(f),
+  };
+}
+
 export async function pont(ws, host, port, { motDePasse = '', connexionTimeout = 8000 } = {}) {
   if (hoteInterdit(host)) throw new Error('adresse interdite');
   const tcp = net.connect({ host, port, lookup: lookupGarde });

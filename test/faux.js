@@ -31,9 +31,12 @@ export async function fauxSynapse(jeton = 'cer_nexarc_essai') {
 
 // Serveur RFB 3.8. Avec mot de passe : exige l'authentification VNC et vérifie
 // la réponse DES. La promesse `authOk` se résout à la première authentification
-// réussie ; `reussites()` les compte toutes.
-export async function fauxRfb({ motDePasse = '' } = {}) {
+// réussie ; `reussites()` les compte toutes. Avec `messages`, il poursuit comme
+// un vrai serveur (ClientInit, ServerInit) et note chaque touche reçue dans
+// `touches` ([appui, keysym]) et le drapeau de partage dans `partages`.
+export async function fauxRfb({ motDePasse = '', messages = false } = {}) {
   let resoudreAuth, reussites = 0; const authOk = new Promise(r => { resoudreAuth = r; });
+  const touches = [], partages = [], fermetures = [];
   const s = net.createServer(async sock => {
     const lu = [];
     let attente = null;
@@ -51,18 +54,32 @@ export async function fauxRfb({ motDePasse = '' } = {}) {
         const reponse = await lire(16);
         const attendu = reponseVnc(motDePasse, defi);
         sock.write(Buffer.from([0, 0, 0, reponse.equals(attendu) ? 0 : 1]));
-        if (reponse.equals(attendu)) { reussites++; resoudreAuth(true); sock.write(Buffer.from('APRES-AUTH')); }
+        if (!reponse.equals(attendu)) return;
+        reussites++; resoudreAuth(true);
+        if (!messages) sock.write(Buffer.from('APRES-AUTH'));
       } else {
         sock.write(Buffer.from([1, 1]));            // None
         await lire(1);
         sock.write(Buffer.from([0, 0, 0, 0]));
         reussites++; resoudreAuth(true);
-        sock.write(Buffer.from('APRES-NONE'));
+        if (!messages) sock.write(Buffer.from('APRES-NONE'));
+      }
+      if (!messages) return;
+      sock.on('close', () => fermetures.push(Date.now()));
+      partages.push((await lire(1))[0]);
+      const nom = Buffer.from('bureau-essai'), init = Buffer.alloc(24);
+      init.writeUInt16BE(800, 0); init.writeUInt16BE(600, 2); init.set([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0], 4); init.writeUInt32BE(nom.length, 20);
+      sock.write(Buffer.concat([init, nom]));
+      for (;;) {
+        const t = (await lire(1))[0];
+        if (t !== 4) return sock.destroy();       // l'essai n'attend que des touches
+        const k = await lire(7);
+        touches.push([k[0], k.readUInt32BE(3)]);
       }
     } catch { /* connexion coupée */ }
   });
   await new Promise(r => s.listen(0, '127.0.0.1', r));
-  return { host: '127.0.0.1', port: s.address().port, authOk, reussites: () => reussites, fermer: () => new Promise(f => s.close(f)) };
+  return { host: '127.0.0.1', port: s.address().port, authOk, reussites: () => reussites, touches, partages, fermetures, fermer: () => new Promise(f => { s.close(f); }) };
 }
 
 // Carte de gestion HTTPS auto-signée : sert `reponse` (HTML ou JSON) selon le chemin.

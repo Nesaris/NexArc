@@ -6,7 +6,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ErreurHttp, Routeur, Debit, lireCorps, valider, repondreJson, egal } from '../socle/src/index.js';
+import { ErreurHttp, Routeur, Debit, lireCorps, valider, repondreJson, egal, Frappes, FRAPPE_MAX } from '../socle/src/index.js';
+import { lienFrappe } from './vncbridge.js';
 import { DEMANDES, CIBLES, chargeRefusee } from './taches.js';
 import { TYPES, typesPublics, normaliser, cibleInterdite } from './consoles.js';
 import { nodeValide, urlBureau } from './mesh.js';
@@ -61,6 +62,8 @@ const S = {
   },
   pin: { idx: { type: 'entier', min: 0, max: 7 }, redfish: { type: 'booleen', defaut: false }, fp: { type: 'chaine', requis: true, max: 100 } },
   acces: { idx: { type: 'entier', min: 0, max: 7, defaut: 0 } },
+  frappe: { idx: { type: 'entier', min: 0, max: 7, defaut: 0 }, texte: { type: 'chaine', requis: true, min: 1, max: FRAPPE_MAX }, clavier: { type: 'chaine', requis: true, parmi: ['fr', 'us', 'traduit'] } },
+  requeteFrappe: { idx: { type: 'entier', min: 0, max: 7, defaut: 0 } },
   // Site et nom sont contrôlés à part (enroll.controler) : ils entrent dans un script root.
   inscription: { site: { type: 'chaine', max: 60, defaut: 'Agents' }, name: { type: 'chaine', max: 60, defaut: '' }, relay: { type: 'booleen', defaut: false } },
   echange: { code: { type: 'chaine', requis: true, max: 40 } },
@@ -302,6 +305,45 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
   // sous renfort récent ; (2) aucune donnée applicative envoyée, socket fermée
   // dès la poignée finie ; (3) rien d'autre ne sort que l'empreinte et le sujet,
   // le certificat n'étant gardé qu'après confirmation de l'empreinte montrée.
+  // Frappe d'un texte par NEXARC dans une console VNC intégrée (socle,
+  // src/frappe.js) : sa propre connexion au serveur VNC, la page peut partir.
+  // Clavier de la machine : AZERTY ou QWERTY pour un serveur qui change les
+  // keysyms en touches comme un clavier US (KVM, iDRAC, iLO) — plus lent, ces
+  // cartes perdent des touches au-delà ; « traduit » pour un serveur qui le
+  // fait selon la disposition de sa machine (bureau). Le texte n'est ni
+  // journalisé ni rendu, seulement sa longueur.
+  const frappes = new Frappes({
+    ouvrir: c => lienFrappe(c.host, c.port, { motDePasse: c.motDePasse }),
+    journal: f => journal.ecrire({ acteur: f.par?.compte || null, action: 'console.frappe.fin', objet: f.machine, resultat: f.etat === 'échec' ? 'erreur' : 'ok', details: { idx: f.idx, etat: f.etat, total: f.total, tapes: f.tapes, sautes: f.sautes } }),
+  });
+  const consoleFrappe = (ctx, idx) => {
+    const id = machine(ctx.params.ref);
+    const c = parc.cibleVnc(id, idx);
+    if (!c) throw new ErreurHttp(404, 'Pas de console VNC intégrée à cet index : la frappe passe par elle.');
+    return { c, cle: `${id}/${idx}` };
+  };
+  const frappePublique = e => (e ? { ...e, par: e.par?.nom || '' } : { etat: 'aucune' });
+  r.post('/api/machines/:ref/frappe', async ctx => {
+    session(ctx, { role: 'membre' });
+    const b = valider(await lireCorps(ctx.req, { limite: 512 * 1024 }), S.frappe);
+    const { c, cle } = consoleFrappe(ctx, b.idx);
+    const traduit = b.clavier === 'traduit';
+    const e = frappes.demarrer(cle, { cible: c, texte: b.texte, disposition: traduit ? null : b.clavier, mode: traduit ? 'traduit' : 'us', ...(traduit ? { min: 8, max: 25 } : { min: 20, max: 40 }), par: { compte: ctx.session.compte, nom: ctx.session.compteLigne?.identifiant || '' }, contexte: { machine: c.machine, idx: b.idx } });
+    journal.ecrire({ acteur: ctx.session.compte, action: 'console.frappe', objet: c.machine, ip: ctx.ip, details: { idx: b.idx, caracteres: e.total, clavier: b.clavier } });
+    return frappePublique(e);
+  }, { role: 'membre' });
+  r.get('/api/machines/:ref/frappe', async ctx => {
+    session(ctx, { role: 'membre' });
+    return frappePublique(frappes.etat(consoleFrappe(ctx, ctx.q.idx).cle));
+  }, { role: 'membre', requete: S.requeteFrappe });
+  r.del('/api/machines/:ref/frappe', async ctx => {
+    session(ctx, { role: 'membre' });
+    const { c, cle } = consoleFrappe(ctx, ctx.q.idx);
+    const e = frappes.arreter(cle);
+    if (e?.etat === 'en cours') journal.ecrire({ acteur: ctx.session.compte, action: 'console.frappe.arret', objet: c.machine, ip: ctx.ip, details: { idx: ctx.q.idx, tapes: e.tapes, total: e.total } });
+    return frappePublique(e);
+  }, { role: 'membre', requete: S.requeteFrappe });
+
   r.get('/api/machines/:ref/pin', async ctx => {
     session(ctx, { role: 'admin', renfort: true });
     const m = parc.machine(machine(ctx.params.ref));
@@ -684,5 +726,6 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
       return true;
     },
     routeur: r,
+    frappes,
   };
 }

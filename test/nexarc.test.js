@@ -180,7 +180,7 @@ test('autorisation : chaque route balayée sans session, en lecture seule et en 
   }
   assert.deepEqual(sansRole, [], 'chaque route non publique déclare son rôle');
   assert.deepEqual(ecarts, []);
-  assert.equal(balayees, 33, 'routes non publiques balayées');
+  assert.equal(balayees, 36, 'routes non publiques balayées');
   // Les seules routes sans session : la sonde de santé, et ce qu'un agent
   // appelle avec son code d'inscription ou son jeton (vérifiés dans la route).
   const publiques = s.api.routeur.routes.filter(r => r.options?.public).map(r => `${r.methode} ${cheminDe(r)}`).sort();
@@ -583,6 +583,49 @@ test('consoles : mot de passe VNC scellé (admin+renfort), jamais rendu ; la cib
   const trace = s.parc.db.prepare("SELECT acteur, objet, details FROM socle_journal WHERE action = 'consoles.modifiees' ORDER BY n DESC LIMIT 1").get();
   assert.equal(trace.objet, 'poste-vnc', 'accès distant journalisé');
   assert.ok(!trace.details.includes('motdepasse-vnc'), 'jamais le secret au journal');
+});
+
+test('frappe par NEXARC dans une console VNC : sa propre connexion, keysyms QWERTY de la disposition de la machine, ou le caractère tel quel', async () => {
+  const rfb = await fauxRfb({ motDePasse: 'secret-vnc', messages: true });
+  try {
+    await enroler(membre, { hostname: 'poste-frappe' });
+    const mref = refMachineParHote('poste-frappe');
+    assert.equal((await admin.put(`/api/machines/${mref}/consoles`, { consoles: [{ type: 'url', target: 'https://198.51.100.20/', label: 'Web' }, { type: 'vnc', target: `${rfb.host}:${rfb.port}`, label: 'KVM', vncpw: 'secret-vnc' }] })).status, 200);
+    const url = `/api/machines/${mref}/frappe`;
+    const fin = async (idx = 1) => { for (let i = 0; i < 600; i++) { const e = (await membre.get(`${url}?idx=${idx}`)).json; if (e.etat !== 'en cours') return e; await new Promise(r => setTimeout(r, 20)); } throw new Error('frappe sans fin'); };
+    const r = await membre.post(url, { idx: 1, texte: 'aA1@', clavier: 'fr' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.ok(!JSON.stringify(r.json).includes('aA1@'));
+    const e = await fin();
+    assert.equal(e.etat, 'terminée', JSON.stringify(e));
+    assert.equal(e.tapes, 4);
+    assert.ok(e.msParCaractere >= 20, 'une carte de gestion suit à son rythme');
+    assert.deepEqual(rfb.partages, [1], 'connexion partagée : la console ouverte reste ouverte');
+    const appuis = rfb.touches.filter(([b]) => b).map(([, k]) => k.toString(16));
+    // AZERTY derrière un serveur QWERTY : a = q ; A = Maj+Q ; 1 = Maj+! ; @ = Alt droite + 0.
+    assert.deepEqual(appuis, ['71', 'ffe1', '51', 'ffe1', '21', 'ffea', '30']);
+    assert.equal(rfb.touches.filter(([b]) => b).length, rfb.touches.filter(([b]) => !b).length, 'chaque appui relâché');
+    await attendre(() => rfb.fermetures.length === 1, 2000);
+
+    rfb.touches.length = 0;
+    assert.equal((await membre.post(url, { idx: 1, texte: 'é€', clavier: 'traduit' })).status, 200);
+    assert.equal((await fin()).etat, 'terminée');
+    assert.deepEqual(rfb.touches.filter(([b]) => b).map(([, k]) => k), [0xe9, 0x010020ac], 'le serveur change lui-même le caractère en touche');
+
+    const j = s.parc.db.prepare("SELECT action, details FROM socle_journal WHERE action LIKE 'console.frappe%'").all();
+    assert.ok(j.some(x => x.action === 'console.frappe') && j.some(x => x.action === 'console.frappe.fin'));
+    assert.ok(!j.some(x => /aA1@|€/.test(String(x.details))), 'jamais le texte au journal');
+
+    // Une à la fois, arrêtée à la demande ; refus.
+    assert.equal((await membre.post(url, { idx: 1, texte: 'x'.repeat(400), clavier: 'us' })).status, 200);
+    assert.equal((await membre.post(url, { idx: 1, texte: 'y', clavier: 'us' })).status, 409);
+    assert.equal((await membre.del(`${url}?idx=1`)).status, 200);
+    assert.equal((await fin()).etat, 'arrêtée');
+    assert.equal((await lecteur.post(url, { idx: 1, texte: 'x', clavier: 'fr' })).status, 403);
+    assert.equal((await membre.post(url, { idx: 0, texte: 'x', clavier: 'fr' })).status, 404, 'une console web n’est pas tapée par NEXARC');
+    assert.equal((await membre.post(url, { idx: 1, texte: 'x', clavier: 'de' })).status, 400);
+    assert.equal((await membre.get(`${url}?idx=1&autre=1`)).status, 400);
+  } finally { await rfb.fermer(); }
 });
 
 test('origine des consoles : la carte s\'affiche hors de l\'origine de NEXARC, par une passe liée à la session', async () => {
