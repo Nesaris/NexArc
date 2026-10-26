@@ -38,7 +38,11 @@ Projet [CodexX64](https://github.com/CodexX64). Licence MIT.
   trois secondes au bord gauche fait revenir. Console VNC : menu Actions
   (Ctrl+Alt+Suppr, Super, Alt+Tab, Échap, Impr. écran, copier, coller en
   tapant le presse-papiers, taper un texte), et sur Mac ⌘ + touche envoyé en
-  Ctrl + touche, ⌘ seul en Super.
+  Ctrl + touche, ⌘ seul en Super. Clavier de la machine (AZERTY, QWERTY, ou
+  « bureau : le serveur VNC traduit ») : ce qui est tapé ici arrive tel quel,
+  quelle que soit la disposition de chacun. Coller et « Taper » font taper le
+  texte par NEXARC lui-même, par sa propre connexion à la console : on peut
+  fermer la console ou quitter la page, la frappe continue.
 - **Alimentation Redfish** : lecture de l'état, allumage (membre), arrêt,
   extinction forcée, redémarrage et cycle (administrateur, confirmation
   récente), sur une carte de gestion au certificat épinglé.
@@ -321,6 +325,23 @@ plein dans NEXARC, mot de passe scellé côté serveur), iDRAC, iLO, IPMI/BMC,
 JetKVM, hyperviseur (console noVNC des VM), interface web, MeshCentral. Une URL
 amont est jointe par un proxy inverse qui n'accepte que http(s), refuse les
 métadonnées de nuage et les plages réservées, et filtre en-têtes et cookies.
+
+**Clavier et frappe d'une console VNC.** Un KVM, une iDRAC ou une iLO
+reçoivent des keysyms et les changent en touches comme un clavier QWERTY US :
+avec « AZERTY » ou « QWERTY » (menu Actions, retenu par console), chaque
+caractère tapé ici part sur la touche qui le donne dans la disposition de la
+machine, Maj et Alt Gr compris ; Maj, Ctrl et Alt tenus ne partent qu'avec une
+touche sans caractère ou une lettre de raccourci. Le serveur VNC d'un bureau
+(Linux, macOS, Windows) fait lui-même ce travail : « bureau : le serveur VNC
+traduit » envoie le caractère tel quel. Coller (⌘V, Ctrl+V) et « Taper »
+envoient le texte à NEXARC, qui le tape par sa propre connexion au serveur
+VNC (partagée : la console ouverte le reste), jusqu'à 100 000 caractères, à un
+rythme qui suit la longueur — au plus vite 20 ms par caractère pour une carte
+de gestion, qui perd des touches au-delà, 8 ms pour un bureau. On peut fermer
+la console ou quitter la page : la frappe continue, et la barre de la console
+la montre en revenant, avec de quoi l'arrêter (`POST`, `GET`, `DELETE
+/api/machines/:ref/frappe`, membre). Le texte n'est ni gardé ni journalisé :
+le journal dit qui a fait taper combien de caractères, sur quelle console.
 
 L'interface web d'une carte est du code qui n'est pas le nôtre : elle ne
 s'exécute jamais sous l'origine de NEXARC, où elle lirait l'API avec la
