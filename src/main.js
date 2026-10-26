@@ -151,17 +151,13 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
 
   async function upgradeVnc(req, socket, ctx, ref, idx) {
     const id = parc.idDe(ref); if (!id) return refuser(socket, 404);
-    const entree = parc.entreeConsole(id, idx);
-    if (!entree || entree.type !== 'vnc') return refuser(socket, 404);
-    const cible = String(entree.target); const i = cible.lastIndexOf(':');
-    const host = cible.slice(0, i).trim(), port = Number(cible.slice(i + 1));
-    if (!host || !Number.isInteger(port)) return refuser(socket, 404);
-    const m = parc.machine(id);
-    const motDePasse = parc.ouvrirVncPw(entree, m.ref);
+    const c = parc.cibleVnc(id, idx);
+    if (!c) return refuser(socket, 404);
+    const { host, port, motDePasse } = c;
     const offert = String(req.headers['sec-websocket-protocol'] || '').split(',').map(x => x.trim());
     const ws = accepter(req, socket, { sousProtocole: offert.includes('binary') ? 'binary' : null });
     // noVNC se reconnecte seul : une ligne par session et par console suffit.
-    socle.journal.rare(`console:${ctx.session.id}:${id}:${idx}`, { acteur: ctx.session.compte, action: 'console.ouverte', objet: m.host, ip: ctx.ip, details: { type: 'vnc', idx } }, 10 * 60e3);
+    socle.journal.rare(`console:${ctx.session.id}:${id}:${idx}`, { acteur: ctx.session.compte, action: 'console.ouverte', objet: c.machine, ip: ctx.ip, details: { type: 'vnc', idx } }, 10 * 60e3);
     await pont(ws, host, port, { motDePasse }).catch(() => { try { ws.close(); } catch { /* fermé */ } });
   }
 
@@ -178,7 +174,7 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
       log.warn?.(`NEXARC_CONSOLE_URL partage le nom d'hôte de NEXARC : les scripts des cartes restent à part, pas les cookies. Donne-lui son propre nom (README, « Consoles et cartes de gestion »).`);
     }
   }
-  const arreter = () => new Promise(r => { socle.arreter(); clearInterval(bCollecte); clearInterval(bAutos); clearInterval(bPurge); consoles?.arreter(); serveur.close(() => { db.close(); r(); }); serveur.closeAllConnections?.(); });
+  const arreter = () => new Promise(r => { api.frappes?.arreterTout(); socle.arreter(); clearInterval(bCollecte); clearInterval(bAutos); clearInterval(bPurge); consoles?.arreter(); serveur.close(() => { db.close(); r(); }); serveur.closeAllConnections?.(); });
   return { serveur, socle, cfg, db, parc, agents, alertes, taches, api, consoles, arreter };
 }
 

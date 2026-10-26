@@ -307,6 +307,18 @@ export class Parc {
     return (idx >= 0 && idx < entrees.length) ? entrees[idx] : null;
   }
 
+  // La cible d'une console VNC intégrée : hôte, port, mot de passe et nom de la
+  // machine, tirés du parc — jamais du navigateur (aucun SSRF par la console).
+  cibleVnc(machineId, idx) {
+    const entree = this.entreeConsole(machineId, idx);
+    if (!entree || entree.type !== 'vnc') return null;
+    const cible = String(entree.target); const i = cible.lastIndexOf(':');
+    const host = cible.slice(0, i).trim(), port = Number(cible.slice(i + 1));
+    if (!host || !Number.isInteger(port)) return null;
+    const m = this.machine(machineId);
+    return { host, port, motDePasse: this.ouvrirVncPw(entree, m.ref), machine: m.host };
+  }
+
   ouvrirVncPw(entree, ref) {
     if (!entree?.vncpw_scelle) return '';
     try { return this.coffre.ouvre('console-vnc', entree.vncpw_scelle, ref + '|' + entree.target); } catch { return ''; }
