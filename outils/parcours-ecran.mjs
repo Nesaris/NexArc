@@ -9,10 +9,10 @@ import { chevauchements } from '../socle/essai/mise-en-page.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-const PAGE = "<!doctype html><html data-theme=\"light\"><meta charset=utf-8><link rel=stylesheet href=\"/socle/soma.css\"><link rel=stylesheet href=\"/nexarc.css\"><body>\n<script type=module>\nimport { ouvrirVncDistant, ouvrirCadreDistant } from '/ecran-distant.js';\nwindow.ouvrirVnc = () => ouvrirVncDistant({ url: `ws://${location.host}/rfb`, titre: 'KVM \u00b7 serveur-a' });\nwindow.ouvrirCadre = () => ouvrirCadreDistant('/cadre.html', 'iDRAC \u00b7 serveur-b');\nwindow.pret = true;\n</script>\n";
+const PAGE = "<!doctype html><html data-theme=\"light\"><meta charset=utf-8><link rel=stylesheet href=\"/socle/soma.css\"><link rel=stylesheet href=\"/nexarc.css\"><body>\n<script type=module>\nimport { ouvrirVncDistant, ouvrirCadreDistant } from '/ecran-distant.js';\nconst api = { get: c => fetch(c).then(r => r.json()), post: (c, b) => fetch(c, { method: 'POST', body: JSON.stringify(b) }).then(r => r.json()), del: c => fetch(c, { method: 'DELETE' }).then(r => r.json()) };\nwindow.ouvrirVnc = () => ouvrirVncDistant({ url: `ws://${location.host}/rfb`, titre: 'KVM \u00b7 serveur-a', frappe: { api, chemin: '/api/frappe', idx: 0 } });\nwindow.ouvrirCadre = () => ouvrirCadreDistant('/cadre.html', 'iDRAC \u00b7 serveur-b');\nwindow.pret = true;\n</script>\n";
 import { accepter } from '../src/websocket.js';
 const N = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const touches = [], coupe = [];
+const touches = [], coupe = [], frappes = [];
 const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
 const srv = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
@@ -20,6 +20,12 @@ const srv = http.createServer((q, r) => {
   let f = u === '/cadre.html' ? null : u.startsWith('/socle/') ? path.join(N, 'socle/web', u.slice(7)) : path.join(N, 'web', u);
   if (u === '/touches') { r.setHeader('content-type', 'application/json'); return r.end(JSON.stringify({ touches, coupe })); }
   if (u === '/vider') { touches.length = 0; coupe.length = 0; return r.end('ok'); }
+  // La frappe par le serveur, simulée : le corps reçu est noté, la frappe dite finie.
+  if (u === '/api/frappe') {
+    r.setHeader('content-type', 'application/json');
+    if (q.method === 'POST') { let b = ''; q.on('data', d => { b += d; }); q.on('end', () => { const c = JSON.parse(b); frappes.push(c); r.end(JSON.stringify({ etat: 'en cours', total: [...c.texte].length, tapes: 0, debut: frappes.length, msParCaractere: 20 })); }); return; }
+    return r.end(JSON.stringify(frappes.length ? { etat: 'terminée', total: [...frappes.at(-1).texte].length, tapes: [...frappes.at(-1).texte].length, sautes: 0, debut: frappes.length, msParCaractere: 20 } : { etat: 'aucune' }));
+  }
   if (!f) { r.setHeader('content-type', 'text/html'); return r.end('<body style="background:#123;color:#fff;font:20px sans-serif">console de la carte</body>'); }
   try { r.setHeader('content-type', types[path.extname(f)] || 'application/octet-stream'); r.end(fs.readFileSync(f)); } catch { r.statusCode = 404; r.end(); }
 });
@@ -78,7 +84,21 @@ await essai('⌘ seul', () => p.keyboard.press('Meta'), ['+ffeb', '-ffeb']);
 await essai('⌘Espace', meta('Space'), ['+ffeb', '-ffeb']);
 await essai('⌘Tab', meta('Tab'), ['+ffe9', '+ff09', '-ff09', '-ffe9']);
 await p.evaluate(() => navigator.clipboard.writeText('Ab1'));
-await essai('⌘V', async () => { await meta('v')(); await p.waitForTimeout(400); }, ['+41', '-41', '+62', '-62', '+31', '-31']);
+await essai('⌘V : aucune touche d’ici, NEXARC tape', async () => { await meta('v')(); await p.waitForTimeout(400); }, []);
+attendu('⌘V : le texte part à NEXARC, avec le clavier de la machine', frappes.at(-1), { idx: 0, texte: 'Ab1', clavier: 'us' });
+// Machine en AZERTY derrière un serveur QWERTY : le caractère d'ici, sur sa touche là-bas.
+await p.getByRole('button', { name: 'Actions' }).click();
+await p.getByRole('menuitem', { name: /AZERTY/ }).click();
+await p.locator('.vncscreen canvas').click({ position: { x: 100, y: 100 } });
+await essai('AZERTY : a, m', () => p.keyboard.type('am'), ['+71', '-71', '+3b', '-3b']);
+await essai('AZERTY : A (Maj tenue ici, Maj+Q là-bas)', () => p.keyboard.type('A'), ['+ffe1', '+51', '-51', '-ffe1']);
+await essai('AZERTY : 1 et @', () => p.keyboard.type('1@'), ['+ffe1', '+21', '-21', '-ffe1', '+ffea', '+30', '-30', '-ffea']);
+await essai('AZERTY : ⌘A → Ctrl + touche Q', meta('a'), ['+ffe3', '+71', '-71', '-ffe3']);
+await essai('AZERTY : Maj+flèche part avec Maj', async () => { await p.keyboard.down('Shift'); await p.keyboard.press('ArrowLeft'); await p.keyboard.up('Shift'); }, ['+ffe1', '+ff51', '-ff51', '-ffe1']);
+await p.getByRole('button', { name: 'Actions' }).click();
+await p.getByRole('menuitem', { name: /traduit/ }).click();
+await p.locator('.vncscreen canvas').click({ position: { x: 100, y: 100 } });
+await essai('traduit : le caractère tel quel', () => p.keyboard.type('a'), ['+61', '-61']);
 await essai('menu Alt+Tab', async () => { await p.getByRole('button', { name: 'Actions' }).click(); await p.getByRole('menuitem', { name: 'Alt+Tab' }).click(); }, ['+ffe9', '+ff09', '-ff09', '-ffe9']);
 await essai('menu Ctrl+Alt+Suppr', async () => { await p.getByRole('button', { name: 'Actions' }).click(); await p.getByRole('menuitem', { name: 'Ctrl+Alt+Suppr' }).click(); }, ['+ffe3', '+ffe9', '+ffff', '-ffff', '-ffe9', '-ffe3']);
 await p.getByRole('button', { name: 'Actions' }).click();
@@ -112,6 +132,6 @@ for (const w of [360, 390, 768, 1280]) {
   await cx.close();
 }
 await navigateur.close(); srv.close();
-console.log(`écran distant : 12 vérifications de touches et de barre, ${controles} écrans×largeurs, écarts : ${ecarts.length}, erreurs console : ${erreurs.length}`);
+console.log(`écran distant : 19 vérifications de touches et de barre, ${controles} écrans×largeurs, écarts : ${ecarts.length}, erreurs console : ${erreurs.length}`);
 for (const e of [...ecarts, ...erreurs]) console.log('  ', e);
 process.exit(ecarts.length || erreurs.length ? 1 : 0);
