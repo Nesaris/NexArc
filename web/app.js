@@ -661,7 +661,7 @@ const ecranDistant = () => import(`/ecran-distant.js${new URL(import.meta.url).s
 async function ouvrirCadre(url, titre) { (await ecranDistant()).ouvrirCadreDistant(url, titre); }
 async function ouvrirVnc(m, idx, label) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  await (await ecranDistant()).ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/${idx}`, titre: `${label} · ${m.host}` });
+  await (await ecranDistant()).ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/${idx}`, titre: `${label} · ${m.host}`, frappe: { api, chemin: `/api/machines/${m.id}/frappe`, idx }, cle: `${m.id}/${idx}` });
 }
 
 async function epinglerConsole(m, idx) {

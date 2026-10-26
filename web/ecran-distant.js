@@ -12,6 +12,7 @@
 // Tout ce qui s'affiche vit dans la fenêtre de la console : en plein écran du
 // navigateur, rien d'autre de la page n'est visible.
 import { h, icone, ajouterPictos } from '/socle/compte.js';
+import { DISPOSITIONS, appuis, evenementsCaractere } from '/socle/clavier.js';
 
 ajouterPictos({ agrandir: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' });
 
@@ -19,7 +20,6 @@ const lire = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { re
 const poser = (k, v) => { try { localStorage.setItem(k, v); } catch { /* navigation privée */ } };
 export const estMac = () => /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '');
 const safari = () => /^((?!chrome|chromium|android|crios|fxios|edg|opr).)*safari/i.test(navigator.userAgent || '');
-const attendre = ms => new Promise(r => setTimeout(r, ms));
 
 // Keysyms X11 utilisés ici.
 const K = {
@@ -34,7 +34,14 @@ export function keysymDe(ch) {
   if (c < 0x20 || c === 0x7f) return 0;
   return c < 0x100 ? c : 0x01000000 + c;
 }
-export const FRAPPE_MAX = 4000;
+// Le plus long texte que NEXARC tape d'une traite (socle, src/frappe.js).
+export const FRAPPE_MAX = 100000;
+// Clavier de la machine : AZERTY ou QWERTY derrière un serveur VNC qui change
+// les keysyms en touches comme un clavier US (KVM, iDRAC, iLO) — chaque
+// caractère tapé ici part sur la touche qui le donne là-bas ; ou « traduit » :
+// le serveur VNC d'un bureau le fait lui-même, selon sa disposition.
+const CLAVIERS = { ...Object.fromEntries(Object.entries(DISPOSITIONS).map(([k, d]) => [k, d.nom])), traduit: 'Bureau : le serveur VNC traduit' };
+const KS_MOD = { ShiftLeft: 0xffe1, ShiftRight: 0xffe2, ControlLeft: 0xffe3, ControlRight: 0xffe4, AltLeft: 0xffe9, AltRight: 0xffea };
 
 // La coquille commune : barre, menu, message, pleins écrans, barre cachée.
 function coquille({ titre, contenu, menu = () => [], surFermer = () => {}, extra = [] }) {
@@ -137,12 +144,18 @@ export function ouvrirCadreDistant(url, titre) {
 }
 
 // Console VNC (pont de NEXARC) par noVNC, avec les gestes de ProxLab.
-export async function ouvrirVncDistant({ url, titre }) {
+// frappe : { api, chemin, idx } — la frappe d'un texte par NEXARC lui-même
+// (POST chemin) ; cle : ce qui retient le clavier choisi pour cette console.
+export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url }) {
   const ecran = h('div', { class: 'remote-frame vncscreen' });
   const recu = h('pre', { class: 'presse-recu', text: '' });
   const aTaper = h('textarea', { class: 'field presse-envoi', rows: 3, placeholder: 'Le texte à taper dans la machine', spellcheck: 'false' });
   const avance = h('span', { class: 'dim fs12' });
-  let rfb = null, connecte = false, enFrappe = false, dernierPresse = '', copieArmee = 0;
+  const puce = h('span', { class: 'remote-frappe', hidden: true });
+  const cleClavier = `nexarc-clavier:${cle}`;
+  let clavier = lire(cleClavier, /^fr/i.test(navigator.language || '') ? 'fr' : 'us');
+  if (!Object.hasOwn(CLAVIERS, clavier)) clavier = 'fr';
+  let rfb = null, connecte = false, dernierPresse = '', copieArmee = 0;
   let resize = lire('nexarc-vnc-ajuster', '1') === '1', qualiteMax = lire('nexarc-vnc-qualite', '0') === '1';
   const panneau = h('div', { class: 'remote-panneau', hidden: true },
     h('div', { class: 'remote-panneau-col' }, h('b', { class: 'fs12', text: 'Copié dans la machine' }), recu,
@@ -151,7 +164,7 @@ export async function ouvrirVncDistant({ url, titre }) {
       h('div', { class: 'rowline9' }, h('button', { class: 'btn sm solid', type: 'button', onclick: () => taper(aTaper.value) }, 'Taper'), avance)));
 
   const c = coquille({
-    titre, contenu: [panneau, ecran], surFermer: () => { try { rfb?.disconnect(); } catch { /* fermé */ } },
+    titre, contenu: [panneau, ecran], extra: [puce], surFermer: () => { clearTimeout(suivi); try { rfb?.disconnect(); } catch { /* fermé */ } },
     menu: () => {
       const off = !connecte;
       return [
@@ -161,6 +174,12 @@ export async function ouvrirVncDistant({ url, titre }) {
           { texte: 'Tout sélectionner', touche: estMac() ? '⌘A' : 'Ctrl+A', inactif: off, agir: () => combo(K.ctrl, [keysymDe('a'), 'KeyA']) },
           { texte: panneau.hidden ? 'Taper un texte…' : 'Masquer le presse-papiers', agir: () => { panneau.hidden = !panneau.hidden; if (!panneau.hidden) aTaper.focus(); } },
         ] },
+        { titre: 'Clavier de la machine', items: Object.entries(CLAVIERS).map(([k, nom]) => ({ texte: nom, coche: clavier === k, agir: () => {
+          relacherMods(); modsTenus.clear();
+          clavier = k; poser(cleClavier, k);
+          c.dire(k === 'traduit' ? 'Chaque caractère part tel quel : le serveur VNC de la machine le change en touches.' : `Clavier ${nom} : ce que tu tapes ici arrive tel quel, quelle que soit la disposition de ton clavier.`);
+          rfb?.focus();
+        } })) },
         { titre: 'Touches', items: [
           { texte: 'Ctrl+Alt+Suppr', inactif: off, agir: () => { rfb.sendCtrlAltDel(); rfb.focus(); } },
           { texte: 'Touche Super (Windows)', inactif: off, agir: () => combo(K.super) },
@@ -186,27 +205,48 @@ export async function ouvrirVncDistant({ url, titre }) {
     for (const [ks, code] of [...touches].reverse()) rfb.sendKey(ks, code, false);
     rfb.focus();
   };
-  // Taper un texte, caractère par caractère, à un rythme que la machine suit ;
-  // rien ne reste enfoncé, même coupé en route.
-  async function taper(texte) {
-    if (!connecte) return c.dire('Pas connecté.', true);
-    if (enFrappe) return c.dire('Une frappe est déjà en cours.', true);
-    const caracteres = [...String(texte || '')].slice(0, FRAPPE_MAX);
-    if (!caracteres.length) return;
-    enFrappe = true;
-    let sautes = 0;
-    try {
-      for (let i = 0; i < caracteres.length && connecte; i++) {
-        const ks = keysymDe(caracteres[i]);
-        if (!ks) { sautes++; continue; }
-        rfb.sendKey(ks, null, true); await attendre(8); rfb.sendKey(ks, null, false); await attendre(22);
-        if (i % 16 === 15) avance.textContent = `frappe ${i + 1}/${caracteres.length}…`;
-      }
-    } finally { enFrappe = false; avance.textContent = ''; rfb?.focus(); }
-    if (sautes) c.dire(`${sautes} caractère${sautes > 1 ? 's' : ''} de contrôle ignoré${sautes > 1 ? 's' : ''}.`);
+  // Taper un texte : NEXARC le tape lui-même, par sa propre connexion à la
+  // console, au clavier de la machine. On peut fermer la console ou quitter la
+  // page : la frappe continue, et se retrouve ici en revenant.
+  let suivi = null, vue = 0;
+  const duree = (n, ms) => { const t = Math.ceil(n * ms / 1000); return t < 60 ? `${t} s` : `${Math.round(t / 60)} min`; };
+  const urlEtat = () => `${frappe.chemin}?idx=${frappe.idx}`;
+  const peindre = fr => {
+    const enCours = fr?.etat === 'en cours';
+    puce.hidden = !enCours;
+    avance.textContent = enCours ? `frappe ${fr.tapes}/${fr.total}…` : '';
+    if (enCours) puce.replaceChildren(h('span', { text: `Frappe ${fr.tapes}/${fr.total} · reste ${duree(fr.total - fr.tapes, fr.msParCaractere)}` }),
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { peindre(await frappe.api.del(urlEtat())); c.dire('Frappe arrêtée.'); } catch (e) { c.dire(e.message, true); } } }, 'Arrêter'));
+  };
+  async function suivre() {
+    clearTimeout(suivi);
+    if (!frappe) return;
+    let fr;
+    try { fr = await frappe.api.get(urlEtat()); } catch { return; }
+    peindre(fr);
+    if (fr.etat === 'en cours') { vue = fr.debut; suivi = setTimeout(suivre, 700); return; }
+    if (vue && vue === fr.debut) {
+      vue = 0;
+      if (fr.etat === 'terminée') c.dire(fr.sautes ? `Tapé, sauf ${fr.sautes} caractère${fr.sautes > 1 ? 's' : ''} absent${fr.sautes > 1 ? 's' : ''} du clavier de la machine.` : `Frappe terminée : ${fr.tapes} caractère${fr.tapes > 1 ? 's' : ''}.`, !!fr.sautes);
+      else if (fr.etat === 'échec') c.dire(`Frappe interrompue (${fr.tapes}/${fr.total}) : ${fr.message}`, true);
+    }
   }
-  // Coller : le presse-papiers d'ici, tapé dans la machine (marche partout,
-  // écran de connexion et BIOS compris).
+  async function taper(texte) {
+    texte = String(texte || '');
+    if (!texte) return;
+    if (!frappe) return c.dire('La frappe passe par NEXARC : ouvre la console depuis sa machine.', true);
+    const n = [...texte].length;
+    if (n > FRAPPE_MAX) return c.dire(`Au plus ${FRAPPE_MAX.toLocaleString('fr-FR')} caractères par frappe (ici ${n.toLocaleString('fr-FR')}).`, true);
+    let fr;
+    try { fr = await frappe.api.post(frappe.chemin, { idx: frappe.idx, texte, clavier }); } catch (e) { return c.dire(e.message, true); }
+    vue = fr.debut;
+    peindre(fr);
+    if (fr.total > 150) c.dire(`NEXARC tape ${fr.total.toLocaleString('fr-FR')} caractères dans la machine (environ ${duree(fr.total, fr.msParCaractere)}) : tu peux fermer la console, la frappe continue.`);
+    rfb?.focus();
+    suivi = setTimeout(suivre, 500);
+  }
+  // Coller : le presse-papiers d'ici, tapé dans la machine par NEXARC (marche
+  // partout, écran de connexion et BIOS compris).
   function collerIci() {
     if (!navigator.clipboard?.readText) { panneau.hidden = false; aTaper.focus(); return c.dire('Colle ton texte dans le panneau, puis « Taper ».'); }
     navigator.clipboard.readText().then(t => (t ? taper(t) : c.dire('Le presse-papiers est vide.')), () => { panneau.hidden = false; aTaper.focus(); c.dire('Le navigateur n’a pas donné le presse-papiers : colle-le dans le panneau, puis « Taper ».', true); });
@@ -216,34 +256,85 @@ export async function ouvrirVncDistant({ url, titre }) {
     navigator.clipboard?.writeText(dernierPresse).then(() => c.dire('Copié ici.'), () => c.dire('Le navigateur refuse : sélectionne le texte du panneau et copie-le.', true));
   }
 
-  // Clavier : sur Mac, ⌘ + touche devient Ctrl + touche dans la machine
-  // (⌘C, ⌘S, ⌘F, ⌘←…), ⌘ seul la touche Super, ⌘Espace la recherche (Super),
-  // ⌘Tab Alt+Tab. macOS ne donne pas le relâché d'une touche lâchée sous ⌘ :
-  // l'appui part complet. ⌘V / Ctrl+V tapent le presse-papiers d'ici.
+  // Clavier. Au caractère (AZERTY ou QWERTY) : ce qui est tapé ici part sur
+  // la touche qui le donne dans la disposition de la machine ; Maj, Ctrl et
+  // Alt ne partent qu'avec une touche sans caractère (flèches, Entrée,
+  // fonctions, laissées à noVNC) ou une lettre de raccourci. « Traduit » :
+  // noVNC envoie le caractère, le serveur VNC fait le reste.
+  // Sur Mac, ⌘ + touche devient Ctrl + touche dans la machine (⌘C, ⌘S, ⌘F,
+  // ⌘←…), ⌘ seul la touche Super, ⌘Espace la recherche (Super), ⌘Tab
+  // Alt+Tab. macOS ne donne pas le relâché d'une touche lâchée sous ⌘ :
+  // l'appui part complet. ⌘V / Ctrl+V : NEXARC tape le presse-papiers d'ici.
   // Écouté en capture, avant noVNC, qui ne voit pas ce qui est pris ici.
   const mac = estMac();
-  let metaSeul = null, keysym = null;
-  const prises = new Set();
+  let metaSeul = null, keysym = null, modUtilise = false;
+  const prises = new Set(), modsTenus = new Set(), modsEnvoyes = new Set();
   const prendre = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+  const envoyerMods = () => { for (const code of modsTenus) if (!modsEnvoyes.has(code)) { modsEnvoyes.add(code); rfb.sendKey(KS_MOD[code], code, true); } modUtilise = true; };
+  function relacherMods() { if (connecte) for (const code of modsEnvoyes) rfb.sendKey(KS_MOD[code], code, false); modsEnvoyes.clear(); }
+  const caractere = ch => {
+    const ev = evenementsCaractere(ch, clavier, { mode: 'us' });
+    if (!ev) return c.dire(`« ${ch} » n’existe pas sur le clavier ${CLAVIERS[clavier]} de la machine.`, true);
+    relacherMods();
+    for (const x of ev) rfb.sendKey(x.keysym, x.code, x.bas);
+    modUtilise = true;
+  };
+  // Une lettre de raccourci, sur sa touche dans la disposition de la machine : [keysym, code].
+  const touche = l => {
+    const a = appuis(l, clavier);
+    if (!a || a.length !== 1 || a[0][1] || a[0][2]) return null;
+    return [evenementsCaractere(l, clavier, { mode: 'us' }).find(x => x.bas).keysym, a[0][0]];
+  };
   ecran.addEventListener('keydown', e => {
     if (!connecte) return;
     const lettre = e.key.length === 1 ? e.key.toLowerCase() : '';
     const coller = (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && lettre === 'v';
     if (coller) { prendre(e); prises.add(e.code); metaSeul = null; if (!e.repeat) collerIci(); return; }
-    if (!mac) { if (e.ctrlKey && (lettre === 'c' || lettre === 'x')) copieArmee = Date.now(); return; }
-    if (/^Meta/.test(e.code)) { prendre(e); metaSeul = e.code; return; }
-    if (!e.metaKey || /^(Shift|Control|Alt)/.test(e.code)) return;
+    const auCaractere = clavier !== 'traduit';
+    if (auCaractere) {
+      if (e.code === 'CapsLock' || e.key === 'Dead') { prendre(e); return; }
+      if (KS_MOD[e.code]) { prendre(e); if (!modsTenus.has(e.code)) { modsTenus.add(e.code); modUtilise = false; } return; }
+      const altgr = typeof e.getModifierState === 'function' && e.getModifierState('AltGraph');
+      const ch = [...e.key].length === 1 && !e.metaKey && (!e.ctrlKey || altgr) && (!e.altKey || altgr || mac) ? e.key : null;
+      if (ch !== null) { prendre(e); prises.add(e.code); metaSeul = null; caractere(ch); return; }
+      if (!mac && e.ctrlKey && !e.altKey && lettre && touche(lettre)) {
+        prendre(e); prises.add(e.code);
+        if (lettre === 'c' || lettre === 'x') { if (e.repeat) return; copieArmee = Date.now(); }
+        modUtilise = true;
+        combo(K.ctrl, ...(e.shiftKey ? [K.shift] : []), touche(lettre));
+        return;
+      }
+    }
+    if (mac && /^Meta/.test(e.code)) { prendre(e); metaSeul = e.code; return; }
+    if (!mac || !e.metaKey || /^(Shift|Control|Alt)/.test(e.code)) {
+      if (!mac && e.ctrlKey && (lettre === 'c' || lettre === 'x')) copieArmee = Date.now();
+      // Une touche sans caractère : Maj, Ctrl et Alt tenus partent avec elle, noVNC envoie le reste.
+      if (auCaractere) envoyerMods();
+      return;
+    }
     prendre(e); prises.add(e.code); metaSeul = null;
     if (e.code === 'Space') { if (!e.repeat) combo(K.super); return; }
     if (e.code === 'Tab') { if (!e.repeat) combo(K.alt, K.tab); return; }
     if (lettre === 'c' || lettre === 'x') { if (e.repeat) return; copieArmee = Date.now(); }
+    const t = auCaractere && lettre ? touche(lettre) : null;
+    if (t) { combo(K.ctrl, ...(e.shiftKey ? [K.shift] : []), t); return; }
     const ks = keysym?.(e) || (lettre ? keysymDe(lettre) : 0);
     if (ks) combo(K.ctrl, [ks, e.code]);
   }, true);
   ecran.addEventListener('keyup', e => {
+    if (modsTenus.has(e.code)) {
+      prendre(e);
+      if (modsEnvoyes.delete(e.code)) { if (connecte) rfb.sendKey(KS_MOD[e.code], e.code, false); }
+      // Alt seul, appuyé puis lâché (menus de Windows) : l'appui part entier.
+      else if (/^Alt/.test(e.code) && !modUtilise && !mac) combo([KS_MOD[e.code], e.code]);
+      modsTenus.delete(e.code);
+      return;
+    }
     if (/^Meta/.test(e.code) && mac) { prendre(e); if (metaSeul === e.code && connecte) combo(K.super); metaSeul = null; return; }
     if (prises.delete(e.code)) prendre(e);
   }, true);
+  ecran.addEventListener('focusout', () => { relacherMods(); modsTenus.clear(); });
+  ecran.addEventListener('pointerdown', () => { if (connecte && modsTenus.size && clavier !== 'traduit') envoyerMods(); }, true);
 
   async function connecter() {
     try { rfb?.disconnect(); } catch { /* déjà fermé */ }
@@ -268,4 +359,5 @@ export async function ouvrirVncDistant({ url, titre }) {
     } catch { c.statut.textContent = 'noVNC indisponible'; }
   }
   await connecter();
+  suivre();
 }

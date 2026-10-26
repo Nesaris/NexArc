@@ -79,6 +79,11 @@
 .remote-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hair-soft);flex:none;min-width:0}
 .remote-bar b{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .remote-bar .grow{flex:1}
+/* La frappe que NEXARC mène dans la machine : où elle en est, et de quoi l'arrêter. */
+.remote-frappe{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);white-space:nowrap;min-width:0}
+.remote-frappe[hidden]{display:none}
+.remote-frappe>span{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:560px){.remote-frappe>span{display:none}}
 .remote-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
 .remote-frame{flex:1;width:100%;border:none;min-height:0}
 
