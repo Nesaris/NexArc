@@ -580,3 +580,5 @@ Sondage exploratoire du 2026-09-30, rejoué le 2026-10-12 (pas le 2026-10-19 : v
 | P38 | jetons d’agents devinés en rafale | `12 POST /api/ingest avec un jeton inventé` | 429 429 | 429 429 |
 | P39 | mot de passe deviné en rafale | `6 POST /api/compte/connexion` | 401 428 | 401 428 |
 | P40 | flux d’activité en rafale | `5 GET /api/activite ouverts ensemble, même session` | 200 200 200 200 429 | 200 200 200 200 429 |
+
+Suivi du 2026-10-30 (2.4.1) : logos. Le logo complet (marque et nom) et la marque seule sont tracés dans la page par createElementNS, en couleur du texte (`web/app.js:15`) ; aucun balisage injecté, aucune donnée. L'icône de l'onglet reprend le fichier favicon du dossier Logo, nettoyé (ni métadonnées, ni commentaire). Aucun contrôle ne change de statut. Essais et parcours du navigateur repassés.
