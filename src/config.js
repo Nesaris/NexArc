@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import { lireConfig } from '../socle/src/index.js';
 
-export const VERSION = '2.4.1';
+export const VERSION = '2.5.0';
 
 export const SPEC_NEXARC = {
   port: { env: 'PORT', type: 'entier', min: 0, max: 65535, defaut: 8090 },
