@@ -4,7 +4,7 @@
 // son adresse est posée, l'origine à part des consoles web.
 import http from 'node:http';
 import path from 'node:path';
-import { lireConfigNexarc, VERSION } from './config.js';
+import { lireConfigNexarc, VERSION, SPEC_NEXARC, REGLAGES_NEXARC } from './config.js';
 import { ouvrirBase, Parc } from './base.js';
 import { Agents } from './agents.js';
 import { Alertes } from './alertes.js';
@@ -16,7 +16,7 @@ import { pont } from './vncbridge.js';
 import { OrigineConsoles } from './origine-consoles.js';
 import { verifierUpgrade, accepter, refuser } from './websocket.js';
 import {
-  Debit, ErreurHttp, demarrerSocle, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
+  Debit, ErreurHttp, appliquerReglages, demarrerSocle, lireNouveautes, superviser, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
   repondreErreur, repondreJson, servirFichier, origineDe, adresseClient, GAMMES,
 } from '../socle/src/index.js';
 import fs from 'node:fs';
@@ -49,11 +49,15 @@ class Flux {
   }
 }
 
-export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
+export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
+  // Les réglages posés par l'assistant complètent l'environnement (qui garde la main).
+  const env = appliquerReglages({ dossier: envBrut.DATA_DIR || SPEC_NEXARC.donnees.defaut, env: envBrut });
   const cfg = lireConfigNexarc(env);
   const db = ouvrirBase(cfg.donnees);
   const socle = await demarrerSocle({
     service: { id: 'nexarc', nom: 'NEXARC', contactSecurite: CONTACT_SECURITE }, db, dossier: cfg.donnees, env, log,
+    assistant: { reglages: REGLAGES_NEXARC, spec: SPEC_NEXARC, version: VERSION, controler: lireConfigNexarc },
+    version: VERSION, nouveautes: lireNouveautes(new URL('../nouveautes.json', import.meta.url)),
     migrer: ({ comptes, coffre }) => migrerComptes({ db, comptes, coffre, log }),
   });
   migrerParc({ db, log });
@@ -178,7 +182,9 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
   return { serveur, socle, cfg, db, parc, agents, alertes, taches, api, consoles, arreter };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Le processus du conteneur supervise le service et le relance quand
+// l'assistant a posé de nouveaux réglages.
+if (import.meta.url === `file://${process.argv[1]}` && !superviser()) {
   demarrer().then(({ arreter }) => {
     for (const s of ['SIGTERM', 'SIGINT']) process.on(s, () => arreter().then(() => process.exit(0)));
   }).catch(e => { console.error(e.message); process.exit(1); });

@@ -1,0 +1,27 @@
+[
+  {
+    "version": "2.5.0",
+    "date": "2026-10-30",
+    "points": [
+      "Assistant de configuration : la première installation se règle dans l’interface, et une mise à jour ne demande plus que ses nouveaux réglages.",
+      "Réglages de NEXARC modifiables à tout moment dans Comptes → Réglages du service, sans toucher au conteneur.",
+      "Les quatre gammes d’interface (SOMA, Console, Exploitation, Lavande) au choix dans les réglages.",
+      "Cette fenêtre : ce qu’apporte chaque mise à jour, en quelques lignes, une seule fois."
+    ]
+  },
+  {
+    "version": "2.4.1",
+    "date": "2026-10-30",
+    "points": [
+      "Nouveau logo dans l’onglet, la barre et l’écran de connexion."
+    ]
+  },
+  {
+    "version": "2.4.0",
+    "date": "2026-10-26",
+    "points": [
+      "Console VNC : le caractère tapé arrive tel quel, quelle que soit la disposition (AZERTY, QWERTY).",
+      "Coller un texte : NEXARC le tape lui-même dans la machine, même page fermée."
+    ]
+  }
+]

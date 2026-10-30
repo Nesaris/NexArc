@@ -152,6 +152,8 @@ test('derrière un relais HTTPS déclaré : HSTS, cookie __Host- sécurisé, et 
     const t = await c.post('/api/compte/totp');
     const { codeTotp } = await import('../socle/essai/inscription.js');
     assert.equal((await c.post('/api/compte/totp/confirmer', { code: codeTotp(t.json.secret) })).json?.niveau, 'complet');
+    // Première configuration passée : sans elle, le service reste fermé.
+    await (await import('../socle/essai/inscription.js')).terminerAssistant(c);
     // La mise à niveau WebSocket reconnaît le cookie __Host- : autorisée, puis
     // 404 (aucune machine). Sans cookie : 401.
     const ws = { Host: h.host, 'X-Forwarded-Proto': 'https', 'X-Forwarded-For': h['x-forwarded-for'], Origin: origine };
