@@ -1,3 +1,12 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="medias/logo-sombre.svg">
+    <img src="medias/logo-clair.svg" alt="NEXARC" height="56">
+  </picture>
+</p>
+
+<p align="center"><img src="medias/affiche.png" alt="Affiche de NEXARC" width="100%"></p>
+
 # NEXARC
 
 Le parc sous les yeux : des agents d'inventaire, des tâches distantes, le suivi
@@ -5,6 +14,26 @@ des correctifs, des consoles intégrées et le réveil des machines — auto-hé
 sur le socle commun des services.
 
 Projet [CodexX64](https://github.com/CodexX64). Licence MIT.
+
+## Aperçu
+
+| <img src="medias/capture-1.png" alt="La fiche d’une machine"> |
+|:--:|
+| La fiche d’une machine |
+
+| <img src="medias/capture-2.png" alt="Les postes et leur risque"> |
+|:--:|
+| Les postes et leur risque |
+
+| <img src="medias/capture-3.png" alt="Les parcs"> |
+|:--:|
+| Les parcs |
+
+| <img src="medias/capture-4.png" alt="Les automatisations"> |
+|:--:|
+| Les automatisations |
+
+Quatre gammes d’interface au choix — SOMA, Console, Exploitation, Lavande — en clair ou en sombre, de 360 à 1920 px de large.
 
 ## Ce que fait NEXARC
 
@@ -168,6 +197,33 @@ commande libre et Hub coupés, jetons d'agents révoqués, mot de passe forcé,
 sauvegarde restaurée), `node outils/parcours-navigateur.mjs <url> <jeton> [dossier]`
 (parcours dans Chromium, sept largeurs, avec Playwright), `node outils/parcours-ecran.mjs`
 (écran distant contre un faux serveur VNC : touches envoyées, barre cachée, quatre largeurs).
+
+## Première configuration et mises à jour
+
+Au premier démarrage, ouvre l’interface : tu crées le compte administrateur avec
+le jeton d’installation (affiché dans les journaux du conteneur, ou transmis par
+le Hub), tu inscris tes facteurs de connexion, puis l’**assistant de
+configuration** passe les réglages de NEXARC groupe par groupe. Il est
+obligatoire : NEXARC reste fermé tant qu’il n’est pas terminé. Chaque valeur
+proposée convient pour commencer.
+
+<p align="center"><img src="medias/assistant.png" alt="Assistant de configuration" width="70%"></p>
+
+Réglages demandés : adresse annoncée aux agents, hors ligne après (secondes de silence), autoriser la commande libre sur les machines, conteneur sur le réseau de l’hôte, alerte hors ligne après (minutes), alerte correctifs en attente depuis (jours), alerte disque plein à (%), alerte risque à partir de (sur 100), adresse de MeshCentral, utilisateur MeshCentral, clé de connexion MeshCentral, origine des consoles web ; plus ceux de
+tous les services (adresse publique, relais de confiance, gamme de
+l’interface, contact de sécurité, courriels d’alerte).
+
+Après une mise à jour qui apporte un réglage nouveau, l’assistant revient au
+passage suivant d’un administrateur et ne demande **que ce réglage-là**. Une
+mise à jour sans réglage nouveau ne demande rien : une fenêtre « Quoi de neuf »
+résume ce qu’elle apporte, une fois par compte, et se ferme d’un clic
+(`nouveautes.json`).
+
+Tout reste modifiable dans **Comptes → Réglages du service**. Une variable
+posée dans l’environnement l’emporte toujours et n’est pas demandée. NEXARC
+redémarre seul pour appliquer un changement (le processus du conteneur le
+supervise). Les valeurs vivent dans `reglages.json`, dans le volume de
+données ; les secrets y sont scellés par la clé maîtresse.
 
 ## Sauvegardes
 
