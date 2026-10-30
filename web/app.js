@@ -8,10 +8,39 @@ import {
   toast, confirmer, dialogue, feuille, ajouterPictos,
 } from '/socle/compte.js';
 
+// Les logos de NEXARC, dans la couleur du texte (mêmes tracés que le dossier
+// Logo) : la marque seule pour les tuiles et l'écran de connexion, le logo
+// complet avec le nom pour la barre.
+const LOGO_NS = 'http://www.w3.org/2000/svg';
+function dessinLogo(vb, traces, largeur, hauteur, nom) {
+  const s = document.createElementNS(LOGO_NS, 'svg');
+  s.setAttribute('width', largeur); s.setAttribute('height', hauteur); s.setAttribute('viewBox', vb);
+  if (nom) { s.setAttribute('role', 'img'); s.setAttribute('aria-label', nom); } else s.setAttribute('aria-hidden', 'true');
+  for (const [d, regle] of traces) {
+    const p = document.createElementNS(LOGO_NS, 'path');
+    p.setAttribute('d', d); p.setAttribute('fill', 'currentColor');
+    if (regle) p.setAttribute('fill-rule', regle);
+    s.append(p);
+  }
+  return s;
+}
+const LOGO_MARQUE = ['28 28 200 200', [['M40,40H80V216H40ZM92,95.86A136,136 0 0 0 176,169.98V40H216V216A176,176 0 0 1 92,164.9Z']]];
+const LOGO_TEXTE = ['28 28 831.19 200', [['M40,40H80V216H40ZM92,95.86A136,136 0 0 0 176,169.98V40H216V216A176,176 0 0 1 92,164.9ZM310.56 172H328.75V131.19C328.75 127.41 328.69 119.91 328.33 110.7C333.29 119.61 337.78 127.23 340.32 131.25L365.95 172H385.15V84H367.02V127.53C367.02 131.25 367.08 138.51 367.31 145.3C363.83 138.99 360.05 132.31 357.98 129L329.69 84H310.56ZM407.94 172H471.07V156.41H426.13V135.15H467.71V119.97H426.13V99.59H471.07V84H407.94ZM485.3 172H505.79L518.49 153.4C521.32 149.26 524.04 145.13 526.76 140.93C529.41 145.13 532.07 149.26 534.85 153.4L547.19 172H568.22L537.15 126.46L565.68 84H545.54L535.62 98.94C532.6 103.49 529.77 108.04 526.93 112.59C524.16 108.04 521.32 103.49 518.43 98.94L508.68 84H488.07L516.89 127ZM579.13 172H598.74L605.12 152.81H638.02L644.16 172H664.3L633.41 84H610.02ZM610.02 138.28 613.03 129.18C615.87 120.2 618.59 111.23 621.78 100.3C624.91 111.23 627.62 120.2 630.34 129.18L633.29 138.28ZM681.12 172H699.31V141.23H715.26C715.32 141.23 715.38 141.23 715.44 141.23L731.03 172H750.52L732.86 137.8C742.72 133.26 748.57 124.52 748.57 112.88C748.57 95.16 736.17 84 716.32 84H681.12ZM699.31 126.64V99.12H715.2C724.83 99.12 730.79 104.49 730.79 112.88C730.79 121.27 724.83 126.64 715.26 126.64ZM808.45 173.42C829.06 173.42 844.41 160.72 847.19 141.11H828.88C826.64 151.45 819.08 157.35 808.68 157.35C793.68 157.35 784.94 145.95 784.94 128.06C784.94 110.05 793.74 98.65 808.68 98.65C819.14 98.65 826.76 104.61 828.82 115.01H847.19C844.41 95.34 829.06 82.58 808.45 82.58C784.23 82.58 766.63 99.95 766.63 128.06C766.63 155.99 784.29 173.42 808.45 173.42Z']]];
+function logoMarque(taille = 16) {
+  const s = dessinLogo(LOGO_MARQUE[0], LOGO_MARQUE[1], taille, taille, '');
+  s.setAttribute('class', 'logo-marque');
+  return s;
+}
+function logoTexte(hauteur = 20) {
+  const s = dessinLogo(LOGO_TEXTE[0], LOGO_TEXTE[1], Math.round(hauteur * 4.1560), hauteur, 'NEXARC');
+  s.setAttribute('class', 'logo-texte');
+  return s;
+}
+
 appliquerTheme();
 const SERVICE = 'NEXARC';
 const api = new Api({ surDeconnexion: () => location.reload() });
-const etat = await porte({ api, service: SERVICE, sousTitre: 'supervision du parc' });
+const etat = await porte({ api, service: SERVICE, marque: logoMarque(20), sousTitre: 'supervision du parc' });
 const moi = etat.session.compte;
 const admin = moi.role === 'admin';
 const peutAgir = moi.role !== 'lecture';
@@ -66,7 +95,7 @@ const railOnline = h('b', { text: '—' });
 const railBar = h('i');
 const app = h('div', { class: 'app' },
   h('nav', { class: 'rail', 'aria-label': 'Navigation' },
-    h('div', { class: 'mark' }, h('div', { class: 'g' }, icone('bouclier', 15)), h('b', { text: SERVICE }), h('i', { class: 'pulse' })),
+    h('div', { class: 'mark' }, logoTexte(24), h('i', { class: 'pulse' })),
     groupe('Supervision', ['over', 'parcs', 'machines', 'alertes']),
     groupe('Sécurité', ['correctifs', 'autos']),
     groupe('Système', ['reglages', 'securite', 'comptes']),
