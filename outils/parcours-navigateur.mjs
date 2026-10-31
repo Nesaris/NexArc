@@ -10,7 +10,7 @@ const [base, jeton, sortie = '/tmp/captures-nexarc'] = process.argv.slice(2);
 fs.mkdirSync(sortie, { recursive: true });
 const MDP = 'phrase de passe pour nexarc en local';
 const navigateur = await chromium.launch();
-const contexte = await navigateur.newContext({ viewport: { width: 1280, height: 860 } });
+const contexte = await navigateur.newContext({ viewport: { width: 1280, height: 860 }, colorScheme: process.env.PARCOURS_SOMBRE === '1' ? 'dark' : 'light' });
 const page = await contexte.newPage();
 contexte.setDefaultTimeout(12000);
 const erreurs = [];
@@ -51,16 +51,35 @@ await controle('tableau');
 // Seed d'une machine par l'API (session du navigateur), puis rechargement pour
 // que le parc apparaisse : on exerce ainsi la fiche, les composants, les tâches.
 // Antivirus inactif : la page Alertes montre une alerte ouverte, pas une liste vide.
-await page.evaluate(async () => {
+// PARCOURS_VITRINE=1 (captures de présentation) : un parc complet, Windows,
+// macOS et Linux, aux états variés.
+const VITRINE = process.env.PARCOURS_VITRINE === '1';
+await page.evaluate(async vitrine => {
   const { session } = await (await fetch('/api/compte/etat', { credentials: 'same-origin' })).json();
   const json = { 'Content-Type': 'application/json' };
-  const info = await (await fetch('/api/enroll/info', { method: 'POST', credentials: 'same-origin', headers: { ...json, 'X-CSRF': session.csrf }, body: JSON.stringify({ site: 'Prod' }) })).json();
-  const conf = await (await fetch('/api/enroll/config', { method: 'POST', headers: json, body: JSON.stringify({ code: info.code }) })).json();
-  await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Token': conf.token }, body: JSON.stringify({ hostname: 'serveur-a', ip: '198.51.100.12', os: 'Ubuntu 24.04 LTS', oskind: 'lin', cpu: 22, ram: 48, disk: 61, av: 'inactif', fw: 'actif', enc: 'LUKS actif', patch: 2, inventory: { hostname: 'serveur-a', cpu_model: 'CPU', cpu_cores: 4, cpu_threads: 8, ram_total_gb: 16, disks: [{ device: '/dev/sda', mount: '/', fs: 'ext4', total_gb: 240, used_pct: 61 }], nics: [{ name: 'eth0', ip: '198.51.100.12', mac: '01:23:45:67:89:ab' }] } }) });
-});
+  const inscrire = async machine => {
+    const info = await (await fetch('/api/enroll/info', { method: 'POST', credentials: 'same-origin', headers: { ...json, 'X-CSRF': session.csrf }, body: JSON.stringify({ site: 'Prod' }) })).json();
+    const conf = await (await fetch('/api/enroll/config', { method: 'POST', headers: json, body: JSON.stringify({ code: info.code }) })).json();
+    await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Token': conf.token }, body: JSON.stringify(machine) });
+  };
+  await inscrire({ hostname: 'serveur-a', ip: '198.51.100.12', os: 'Ubuntu 24.04 LTS', oskind: 'lin', cpu: 22, ram: 48, disk: 61, av: 'inactif', fw: 'actif', enc: 'LUKS actif', patch: 2, inventory: { hostname: 'serveur-a', cpu_model: 'CPU', cpu_cores: 4, cpu_threads: 8, ram_total_gb: 16, disks: [{ device: '/dev/sda', mount: '/', fs: 'ext4', total_gb: 240, used_pct: 61 }], nics: [{ name: 'eth0', ip: '198.51.100.12', mac: '01:23:45:67:89:ab' }] } });
+  if (!vitrine) return;
+  const parc = [
+    ['poste-compta', '198.51.100.21', 'Windows 11 Pro 24H2', 'win', 34, 62, 71, 'Defender actif', 'actif', 'BitLocker actif', 0],
+    ['portable-direction', '198.51.100.22', 'macOS Sequoia 15.1', 'mac', 12, 55, 48, 'XProtect actif', 'actif', 'FileVault actif', 1],
+    ['poste-accueil', '198.51.100.23', 'Windows 10 Pro 22H2', 'win', 71, 83, 93, 'inactif', 'actif', 'aucun', 12],
+    ['srv-web', '198.51.100.30', 'Ubuntu 22.04 LTS', 'lin', 57, 73, 44, 'ClamAV actif', 'actif', 'LUKS actif', 3],
+    ['nas-sauvegardes', '198.51.100.40', 'Debian 12', 'lin', 8, 31, 87, 'inactif', 'actif', 'LUKS actif', 5],
+    ['atelier-cao', '198.51.100.24', 'Windows 11 Pro 23H2', 'win', 46, 68, 52, 'Defender actif', 'actif', 'BitLocker actif', 2],
+  ];
+  for (const [hostname, ip, os, oskind, cpu, ram, disk, av, fw, enc, patch] of parc) {
+    await inscrire({ hostname, ip, os, oskind, cpu, ram, disk, av, fw, enc, patch, inventory: { hostname, cpu_model: 'CPU', cpu_cores: 8, cpu_threads: 16, ram_total_gb: 32, disks: [{ device: oskind === 'win' ? 'C:' : '/dev/nvme0n1', mount: oskind === 'win' ? 'C:\\' : '/', fs: oskind === 'win' ? 'NTFS' : oskind === 'mac' ? 'APFS' : 'ext4', total_gb: 512, used_pct: disk }], nics: [{ name: 'eth0', ip, mac: '02:00:00:00:00:' + ip.split('.').pop().padStart(2, '0') }] } });
+  }
+}, VITRINE);
 await page.reload();
 await page.locator('.app').waitFor();
 await page.getByRole('heading', { name: 'Tableau de bord' }).waitFor();
+if (VITRINE) { await page.waitForTimeout(800); await controle('tableau-plein'); }
 
 for (const [bouton, titre, nom] of [['Postes', 'Postes', 'postes'], ['Alertes', 'Alertes', 'alertes'], ['Correctifs', 'Correctifs', 'correctifs'], ['Automatisations', 'Automatisations', 'automatisations'], ['Réglages', 'Réglages', 'reglages'], ['Sécurité', 'Sécurité', 'securite'], ['Comptes', 'Comptes', 'comptes']]) {
   await page.locator('.rail').getByRole('button', { name: bouton, exact: true }).click();
