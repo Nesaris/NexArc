@@ -3,7 +3,7 @@
 # volume nommé et réseau partagé du Hub.
 services:
   nexarc:
-    image: ghcr.io/codexx64/nexarc:{{config.IMAGE_TAG}}
+    image: ghcr.io/nesaris/nexarc:{{config.IMAGE_TAG}}
     container_name: {{service.host}}
     restart: unless-stopped
     networks: [hub]
