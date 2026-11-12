@@ -1358,12 +1358,20 @@ test('pont VNC de bout en bout : mise à niveau WebSocket sous session, mot de p
 });
 
 test('thème : la page porte la gamme posée par la page Thème du Hub ; SOMA hors Hub', async () => {
-  assert.match((await s.client().get('/')).texte, /<html lang="fr" data-gamme="soma">/);
+  assert.match((await s.client().get('/')).texte, /<html lang="fr" data-gamme="soma" data-disposition="gauche" data-disposition-defaut="gauche">/);
   const x = await lancer(fs.mkdtempSync(path.join(os.tmpdir(), 'nexarc-gamme-')), { SOCLE_THEME: 'console' });
   try { assert.match((await x.client().get('/')).texte, /data-gamme="console"/); } finally { await x.arreter(); }
   const lire = f => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   assert.match(lire('deploy/compose.hub.yml'), /^ {6}SOCLE_THEME: "\{\{hub\.theme\}\}"$/m);
-  assert.equal(JSON.parse(lire('hub.json')).minHubVersion, '0.7.0', '{{hub.theme}} vient avec le Hub 0.7.0');
+  assert.match(lire('deploy/compose.hub.yml'), /^ {6}SOCLE_DISPOSITION: "\{\{hub\.disposition\}\}"$/m);
+  assert.equal(JSON.parse(lire('hub.json')).minHubVersion, '0.17.0', '{{hub.disposition}} vient avec le Hub 0.17.0');
+  // La position du menu : celle du Hub, et le choix de la personne lu avant le rendu.
+  const y = await lancer(fs.mkdtempSync(path.join(os.tmpdir(), 'nexarc-menu-')), { SOCLE_DISPOSITION: 'haut' });
+  try {
+    const page = (await y.client().get('/')).texte;
+    assert.match(page, /data-disposition="haut" data-disposition-defaut="haut"/);
+    assert.match(page, /<head><script nonce="[^"]+">try\{var d=localStorage/);
+  } finally { await y.arreter(); }
 });
 
 test('manifeste : relais de confiance du réseau du Hub par défaut, HTTPS reconnu derrière Relay', () => {

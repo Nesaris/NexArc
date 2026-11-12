@@ -17,7 +17,7 @@ import { OrigineConsoles } from './origine-consoles.js';
 import { verifierUpgrade, accepter, refuser } from './websocket.js';
 import {
   Debit, ErreurHttp, appliquerReglages, demarrerSocle, lireNouveautes, superviser, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
-  repondreErreur, repondreJson, servirFichier, origineDe, adresseClient, GAMMES,
+  repondreErreur, repondreJson, servirFichier, origineDe, adresseClient, GAMMES, avecDisposition,
 } from '../socle/src/index.js';
 import fs from 'node:fs';
 
@@ -119,7 +119,7 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
       // impose sa durée de cache au navigateur (Cloudflare) ne sert jamais
       // l'interface d'avant après une mise à jour. La page elle-même : no-store.
       if (fichier === '/index.html') {
-        const html = PAGE.replaceAll('__NONCE__', nonce).replaceAll('__GAMME__', GAMMES.includes(socle.cfg.gamme) ? socle.cfg.gamme : 'soma');
+        const html = avecDisposition(PAGE.replaceAll('__NONCE__', nonce).replaceAll('__GAMME__', GAMMES.includes(socle.cfg.gamme) ? socle.cfg.gamme : 'soma'), { nonce });
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(html) });
         return res.end(req.method === 'HEAD' ? undefined : html);
       }

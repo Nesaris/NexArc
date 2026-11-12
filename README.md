@@ -464,6 +464,7 @@ socle.
 | `NEXARC_HUB_TOKEN` | jeton du Hub : état, tâches, réveils — jamais les comptes ni les réglages | — |
 | `SOCLE_JETON_ADMIN_HUB` | jeton d'administration des comptes par le Hub (Comptes des services) ; dans le Hub, généré (`HUB_ADMIN_TOKEN`) | — |
 | `SOCLE_THEME` | gamme de l'interface : `soma` ou `console` (noir et vert, ou blanc et bleu) ; dans le Hub, choisie dans la page Thème | `soma` |
+| `SOCLE_DISPOSITION` | position du menu : `gauche`, `haut`, `bas` ou `droite` ; dans le Hub, choisie dans la page Thème. Chacun peut en choisir une autre dans l'interface (bouton à côté de clair ou sombre, ou appui long sur le menu puis glisser vers un bord) | `gauche` |
 | `NEXARC_ALLOW_EXEC` | `1` autorise la commande libre, en tâche comme en automatisation (toujours admin + confirmation récente) ; à `0`, une automatisation « commande libre » existante ne s'exécute plus | `0` |
 | `NEXARC_MAX_MACHINES` | plafond de machines | `5000` |
 | `NEXARC_INGEST_MINUTE` | remontées d'agent par minute et par IP | `240` |
