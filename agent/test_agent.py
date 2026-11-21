@@ -10,6 +10,7 @@ Prouvé contre un vrai serveur HTTPS local, pas sur des objets simulés.
 Le certificat d'essai vient de l'aide du socle (socle/essai/smtp.js), lancée
 par Node : la bibliothèque standard de Python ne sait pas en fabriquer un.
 """
+import base64
 import hashlib
 import importlib.util
 import json
@@ -21,6 +22,7 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -210,7 +212,7 @@ class Durcissement(unittest.TestCase):
     def test_types_de_taches_identiques_au_serveur(self):
         with open(os.path.join(RACINE, 'src', 'taches.js'), encoding='utf-8') as f:
             m = re.search(r"KINDS = new Set\(\[([^\]]+)\]\)", f.read())
-        self.assertEqual(agent.KINDS, set(re.findall(r"'([a-z]+)'", m.group(1))))
+        self.assertEqual(agent.KINDS, set(re.findall(r"'([a-z-]+)'", m.group(1))))
 
     def test_motif_de_paquet_identique_au_serveur(self):
         with open(os.path.join(RACINE, 'src', 'taches.js'), encoding='utf-8') as f:
@@ -348,6 +350,85 @@ class ServiceEtJournal(unittest.TestCase):
         finally:
             agent.IS_LINUX, agent.JOURNAL_FICHIER, agent.JOURNAL_MAX = avant
             shutil.rmtree(d, ignore_errors=True)
+
+
+class PriseEnMain(unittest.TestCase):
+    def test_masque_websocket_reversible(self):
+        cle = b'\x01\x02\x03\x04'
+        for donnees in (b'', b'a', b'bonjour', bytes(range(256)) * 300):
+            self.assertEqual(agent.masquer(agent.masquer(donnees, cle), cle), donnees)
+        self.assertEqual(agent.masquer(b'\x00\x00\x00\x00\x00', cle), b'\x01\x02\x03\x04\x01')
+
+    def test_guid_websocket_de_la_rfc(self):
+        # Exemple de la RFC 6455, section 1.3.
+        attendu = base64.b64encode(hashlib.sha1(('dGhlIHNhbXBsZSBub25jZQ==' + agent.GUID_WS).encode()).digest()).decode()
+        self.assertEqual(attendu, 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
+
+    def test_gdm_passe_en_x11_sans_casser_le_fichier(self):
+        d = tempfile.mkdtemp()
+        try:
+            for avant in ('[daemon]\n#WaylandEnable=false\n\n[security]\n', '[daemon]\nAutomaticLogin=x\n', '# vide\n'):
+                f = os.path.join(d, 'custom.conf')
+                with open(f, 'w') as h:
+                    h.write(avant)
+                self.assertTrue(agent.gdm_en_x11(f))
+                texte = open(f).read()
+                self.assertEqual(len(re.findall(r'^WaylandEnable=false$', texte, re.M)), 1, texte)
+                self.assertIn('[daemon]', texte)
+                self.assertFalse(agent.gdm_en_x11(f), 'déjà réglé : rien ne change')
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_gestes_systeme_resultat_d_abord(self):
+        lances, avant = [], agent.plus_tard
+        agent.plus_tard = lambda delai, cmd: lances.append((delai, cmd))
+        try:
+            rc, out = agent.run_job({'kind': 'redemarrer', 'payload': ''}, 5)
+            self.assertEqual(rc, 0)
+            self.assertEqual(lances[0][0], 5)
+            self.assertIn('redémarrage', out)
+        finally:
+            agent.plus_tard = avant
+        self.assertEqual(agent.run_job({'kind': 'agent-maj', 'payload': 'a' * 64}, 5)[0], 1, 'hors du service : refusé')
+        self.assertEqual(agent.run_job({'kind': 'preparer-ecran', 'payload': ''}, 5)[0], 1)
+
+    def test_mise_a_jour_refuse_une_empreinte_differente(self):
+        class Rep:
+            status_code, content = 200, b"VERSION = '9.9.9'\n"
+        class Sess:
+            def get(self, *a, **k):
+                return Rep()
+        rc, out = agent.mettre_a_jour(Sess(), 'http://x', {}, 'b' * 64)
+        self.assertEqual(rc, 1)
+        self.assertIn('rien n', out)
+        self.assertEqual(agent.mettre_a_jour(Sess(), 'http://x', {}, 'pas-une-empreinte')[0], 1)
+        self.assertEqual(agent.mettre_a_jour(Sess(), 'http://x', {}, agent.empreinte_code()), (0, 'agent déjà à jour'))
+
+    def test_prise_en_main_refusable_sur_le_poste(self):
+        e = agent.Ecran({'prise_en_main': False})
+        self.assertEqual(e.etat()[0], 'indisponible')
+        envois = []
+        c = agent.Canal({'url': 'https://x', 'token': 't', 'prise_en_main': False}, None, e)
+        c.envoyer = envois.append
+        c._ouvrir(7, {'type': 'terminal'})
+        self.assertEqual(envois[0]['t'], 'refus')
+        self.assertFalse(c.capacites()['terminal'])
+
+    def test_bornes_des_tailles(self):
+        self.assertEqual((agent.borne(9999, 10, 500, 100), agent.borne('x', 10, 500, 100), agent.borne(1, 5, 300, 30)), (500, 100, 5))
+
+    @unittest.skipIf(agent.IS_WIN, 'pseudo-terminal POSIX')
+    def test_terminal_posix_reel(self):
+        t = agent.TerminalPosix(80, 24)
+        try:
+            t.ecrire(b'stty size; echo fin-$((40+2))\n')
+            sortie, fin = b'', time.time() + 10
+            while b'fin-42' not in sortie and time.time() < fin:
+                sortie += t.lire()
+            self.assertIn(b'24 80', sortie)
+            self.assertIn(b'fin-42', sortie)
+        finally:
+            t.fermer()
 
 
 if __name__ == '__main__':
