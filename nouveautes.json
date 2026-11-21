@@ -1,5 +1,15 @@
 [
   {
+    "version": "2.7.0",
+    "date": "2026-11-21",
+    "points": [
+      "Prise en main par l’agent : écran et terminal de chaque machine (Windows, macOS, Linux avec ou sans écran), sans aucun port à ouvrir. L’agent installe et règle lui-même le serveur d’écran local.",
+      "Système : éteindre, redémarrer, allumer et préparer le réveil par le réseau depuis la fiche d’une machine.",
+      "Les tâches partent tout de suite, sans attendre la relève de l’agent.",
+      "Les agents se mettent à jour d’eux-mêmes ; un agent plus ancien se met à jour depuis « Système »."
+    ]
+  },
+  {
     "version": "2.6.0",
     "date": "2026-11-12",
     "points": [
