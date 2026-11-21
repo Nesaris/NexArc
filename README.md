@@ -36,6 +36,8 @@ Commercial RMM tools are expensive and send your fleet data to someone else's cl
 - **Remote tasks & automations** — inventory, install, uninstall, update, wake; scheduled tasks on any group.
 - **Alerts** — machine offline, antivirus missing, firewall off, disk not encrypted, security patches pending, disk full; live activity feed (SSE).
 - **Built-in consoles** — full-screen VNC (password never leaves the server), out-of-band interfaces (iDRAC, iLO, IPMI, JetKVM…) through a filtering reverse proxy, MeshCentral remote desktop.
+- **Remote control through the agent** — screen and terminal of every machine (Windows, macOS, Linux with or without a display) over a connection the agent opens itself: no inbound port on the machines. The agent installs and configures the local screen server. Admin only, with recent re-authentication, every session logged.
+- **Power** — shut down, restart, prepare Wake-on-LAN from the machine page; tasks reach the agent instantly; agents update themselves.
 - **Redfish power control** and **Wake-on-LAN** through a relay agent on the same segment.
 
 ## Screenshots

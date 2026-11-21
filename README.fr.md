@@ -72,6 +72,14 @@ Quatre gammes d’interface au choix — SOMA, Console, Exploitation, Lavande �
   quelle que soit la disposition de chacun. Coller et « Taper » font taper le
   texte par NEXARC lui-même, par sa propre connexion à la console : on peut
   fermer la console ou quitter la page, la frappe continue.
+- **Prise en main par l'agent** : l'écran et le terminal de chaque machine
+  (Windows, macOS, Linux avec ou sans écran), par une connexion que l'agent
+  ouvre lui-même vers NEXARC — aucun port à ouvrir sur les postes. Réservée
+  aux administrateurs, sous confirmation récente, chaque ouverture inscrite
+  au journal de sécurité. Voir [Prise en main par l'agent](#prise-en-main-par-lagent).
+- **Système** : éteindre, redémarrer, préparer le réveil par le réseau d'une
+  machine à agent (administrateur, confirmation récente) ; l'allumer par le
+  réveil réseau.
 - **Alimentation Redfish** : lecture de l'état, allumage (membre), arrêt,
   extinction forcée, redémarrage et cycle (administrateur, confirmation
   récente), sur une carte de gestion au certificat épinglé.
@@ -360,6 +368,16 @@ L'agent (`agent/nexarc-agent.py`, Python 3, `psutil` et `requests`) :
   nexarc-agent` sous Linux, `%ProgramData%\NexarcAgent\agent.log` sous Windows,
   `/usr/local/nexarc-agent/agent.log` sous macOS (1 Mo, plus une génération).
 
+Depuis la 2.7.0, l'agent garde aussi un **canal** ouvert vers NEXARC (voir
+ci-dessous) : une tâche créée lui parvient aussitôt, sans attendre la relève.
+Il se **met à jour seul** : la relève annonce l'empreinte SHA-256 du code que
+NEXARC distribue ; quand elle diffère de la sienne, l'agent télécharge ce code
+par son jeton, vérifie l'empreinte, le remplace et redémarre son service.
+`"maj_auto": false` dans `agent.json` l'en empêche. Un agent d'avant la 2.7.0
+se met à jour depuis la fiche de sa machine (Système → « Mettre à jour
+l'agent ») : NEXARC lui envoie une commande qu'il écrit lui-même (elle part
+même quand la commande libre est désactivée), qui fait la même vérification.
+
 Révoquer un jeton — poste perdu, jeton exposé, incident :
 
 ```bash
@@ -371,6 +389,44 @@ Le jeton cesse aussitôt ; les tâches encore dues de ce poste sont abandonnées
 la machine garde son historique et ses accès. L'agent se réinscrit avec un
 nouveau code et retrouve sa machine par son nom d'hôte. Chaque révocation est
 inscrite au journal de sécurité.
+
+## Prise en main par l'agent
+
+L'agent ouvre lui-même une connexion WebSocket vers NEXARC
+(`/api/agent/canal`), avec la même vérification TLS que ses remontées
+(autorité ou empreinte épinglée) et son jeton ; elle se rouvre seule après
+une coupure. Rien n'écoute sur le poste : le serveur d'écran local n'est joint
+qu'en boucle locale, par l'agent.
+
+| Système | Écran | Terminal |
+|---|---|---|
+| Windows 10 1809 et plus | TightVNC, installé et réglé par l'agent (winget) : boucle locale seulement, mot de passe propre au poste | PowerShell dans une pseudo-console (couleurs, invites) |
+| macOS | Partage d'écran : à activer **une fois** sur place (Réglages Système → Général → Partage), macOS ne laisse plus un programme le faire. Sans mot de passe VNC posé, la console demande un compte du Mac | le shell de root dans un pseudo-terminal |
+| Linux avec écran (X11) | x11vnc, installé par l'agent et lancé à la demande, joint en boucle locale | le shell de root dans un pseudo-terminal |
+| Linux en session Wayland | « Préparer l'écran » passe l'écran de connexion GDM en X11 (`WaylandEnable=false`), effectif au prochain démarrage | idem |
+| Linux sans écran | — (le terminal reste) | idem |
+
+Sur la fiche d'une machine : **Écran**, **Terminal**, et **Préparer
+l'écran** tant que l'agent ne l'a pas installé ou qu'il manque un geste sur
+place (la raison s'affiche). Le mot de passe du serveur d'écran est tiré par
+l'agent, rangé dans son `agent.json` (`0600`, ACL SYSTEM sous Windows) ; NEXARC
+s'authentifie avec lui et présente au navigateur une session sans mot de passe :
+il ne va jamais au navigateur.
+
+Chaque ouverture exige le rôle administrateur et une confirmation récente, et
+s'inscrit au journal de sécurité (`prise_en_main.ecran`,
+`prise_en_main.terminal`). Désactiver : `NEXARC_REMOTE_CONTROL=0` pour tout le
+service, ou `"prise_en_main": false` dans l'`agent.json` d'un poste (refus côté
+agent, quoi que demande NEXARC) ; `"canal": false` coupe le canal (tâches à la
+relève, comme avant).
+
+**Système** (fiche de la machine) : redémarrer et éteindre partent 5 secondes
+après réception ; « Préparer le réveil par le réseau » active le paquet
+magique sur les cartes filaires (`ethtool` et NetworkManager sous Linux,
+gardé au démarrage par `nexarc-wol.service` ; carte réseau et démarrage
+rapide coupé sous Windows ; `pmset womp` sous macOS). Le réglage « Wake on
+LAN » du BIOS ou de l'UEFI reste à vérifier à la main. Allumer passe par le
+réveil réseau (voir plus bas) ou par la carte de gestion.
 
 ## Consoles et cartes de gestion
 
@@ -465,6 +521,7 @@ socle.
 | `SOCLE_JETON_ADMIN_HUB` | jeton d'administration des comptes par le Hub (Comptes des services) ; dans le Hub, généré (`HUB_ADMIN_TOKEN`) | — |
 | `SOCLE_THEME` | gamme de l'interface : `soma` ou `console` (noir et vert, ou blanc et bleu) ; dans le Hub, choisie dans la page Thème | `soma` |
 | `SOCLE_DISPOSITION` | position du menu : `gauche`, `haut`, `bas` ou `droite` ; dans le Hub, choisie dans la page Thème. Chacun peut en choisir une autre dans l'interface (bouton à côté de clair ou sombre, ou appui long sur le menu puis glisser vers un bord) | `gauche` |
+| `NEXARC_REMOTE_CONTROL` | `0` désactive l'écran et le terminal par l'agent (toujours admin + confirmation récente) | `1` |
 | `NEXARC_ALLOW_EXEC` | `1` autorise la commande libre, en tâche comme en automatisation (toujours admin + confirmation récente) ; à `0`, une automatisation « commande libre » existante ne s'exécute plus | `0` |
 | `NEXARC_MAX_MACHINES` | plafond de machines | `5000` |
 | `NEXARC_INGEST_MINUTE` | remontées d'agent par minute et par IP | `240` |
