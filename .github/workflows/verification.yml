@@ -1,7 +1,7 @@
 name: verification
 
 # Chaque poussée, chaque demande de fusion et chaque lundi : les essais, les
-# empreintes de ce qui est embarqué (socle, noVNC), l'analyse statique, les
+# empreintes de ce qui est embarqué (socle, noVNC, xterm.js), l'analyse statique, les
 # secrets de tout l'historique, l'identité des nouveaux commits et la liste d'anonymat. Aucune action
 # tierce n'est suivie par étiquette : chacune est épinglée sur son commit.
 
@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.1
+          node-version: 24.22.3
       - name: Essais
         run: npm test
       # L'agent : vérification TLS sur ses deux chemins, lecture de la posture.
@@ -41,11 +41,13 @@ jobs:
       - name: Socle embarqué conforme à ses empreintes
         working-directory: socle
         run: sha256sum --check --strict EMPREINTES
-      - name: noVNC conforme à sa provenance
-        working-directory: web/vendor/novnc
+      # Lignes « <empreinte>  <fichier> » des PROVENANCE ; aucune ne doit manquer.
+      - name: noVNC et xterm.js conformes à leur provenance
         run: |
-          grep -E '^  [0-9a-f]{64}  ' PROVENANCE | while read -r somme _ fichier; do
-            echo "$somme  $fichier" | sha256sum --check --strict
+          for d in web/vendor/novnc web/vendor/xterm; do
+            n=$(grep -cE '^  [0-9a-f]{64}  ' "$d/PROVENANCE")
+            test "$n" -gt 0
+            grep -E '^  [0-9a-f]{64}  ' "$d/PROVENANCE" | sed 's/^  //' | (cd "$d" && sha256sum --check --strict)
           done
 
   secrets:
