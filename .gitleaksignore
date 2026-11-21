@@ -1,2 +1,6 @@
 # Faux positif : le jeton d’agent inventé cité par le relevé d’avant corrections (annexe B.4.9).
 ff6c3039c58563a1b3612a78c642e79feae8f2f2:SECURITY.md:curl-auth-header:457
+# Faux positif : jeton d'agent inventé (refus d'un faux jeton sur le canal), essai de la 2.7.0.
+3ab395959c1fc06934c8211b4d5ac8224d0c8d45:test/nexarc.test.js:generic-api-key:1450
+# Faux positif : nom de classe interne de xterm.js 5.5.0 (« FourKeyMap »), fichier servi tel que publié (voir web/vendor/xterm/PROVENANCE).
+c801270264a587fb9c41960086008cee719d5ba0:web/vendor/xterm/xterm.js:generic-api-key:1
