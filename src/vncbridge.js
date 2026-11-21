@@ -106,6 +106,17 @@ export async function lienFrappe(host, port, { motDePasse = '', delai = 8000 } =
 export async function pont(ws, host, port, { motDePasse = '', connexionTimeout = 8000 } = {}) {
   if (hoteInterdit(host)) throw new Error('adresse interdite');
   const tcp = net.connect({ host, port, lookup: lookupGarde });
+  return relier(ws, tcp, { motDePasse, connexionTimeout, attendre: true });
+}
+
+// L'écran d'une machine par son agent : le flux du canal joue le rôle de la
+// connexion TCP (déjà établie : l'agent a joint son serveur VNC local).
+export function pontFlux(ws, flux, { motDePasse = '' } = {}) {
+  if (flux.ferme) { ws.fermerCode(1011, 'session close par le poste'); return Promise.resolve(); }
+  return relier(ws, flux, { motDePasse, attendre: false });
+}
+
+async function relier(ws, tcp, { motDePasse = '', connexionTimeout = 8000, attendre = true }) {
   const lecteurTcp = new Lecteur();
   const lecteurWs = new Lecteur();
   let raccorde = false, clos = false;
@@ -119,7 +130,7 @@ export async function pont(ws, host, port, { motDePasse = '', connexionTimeout =
   // toujours détruite quand le navigateur part.
   ws.on('fermeture', finir);
 
-  await new Promise((res, rej) => { tcp.once('connect', res); tcp.once('error', rej); }).catch(() => { ws.fermerCode(1011, 'VNC injoignable'); throw new Error('connexion VNC échouée'); });
+  if (attendre) await new Promise((res, rej) => { tcp.once('connect', res); tcp.once('error', rej); }).catch(() => { ws.fermerCode(1011, 'VNC injoignable'); throw new Error('connexion VNC échouée'); });
   tcp.setTimeout(0);
 
   if (motDePasse) {

@@ -12,7 +12,8 @@ import { Taches } from './taches.js';
 import { Synapse } from './synapse.js';
 import { lienDeSecours, migrerComptes, migrerParc } from './migration.js';
 import { creerApi } from './api.js';
-import { pont } from './vncbridge.js';
+import { pont, pontFlux } from './vncbridge.js';
+import { Canaux } from './canal.js';
 import { OrigineConsoles } from './origine-consoles.js';
 import { verifierUpgrade, accepter, refuser } from './websocket.js';
 import {
@@ -79,8 +80,13 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
   });
   const agents = new Agents(db, { parc, maxMachines: cfg.maxMachines, synapse, alertes, flux: l => flux.pousser({ t: 'flux', ...l }) });
   const taches = new Taches(db, { parc, synapse, journal: socle.journal, flux, commandeLibre: cfg.commandeLibre });
+  // Le canal permanent des agents : une tâche créée part tout de suite, et
+  // l'écran et le terminal passent par lui (aucun port ouvert sur les postes).
+  const canaux = new Canaux({ log });
+  taches.surCreation = machineId => canaux.signaler(machineId);
+  canaux.surChangement = () => flux.pousser({ t: 'canal' });
   const consoles = cfg.consoleUrl ? new OrigineConsoles({ url: cfg.consoleUrl, parc, comptes: socle.comptes, proxys: socle.portail.proxys, journal: socle.journal, racine: RACINE }) : null;
-  const api = creerApi({ socle, cfg, db, parc, agents, alertes, taches, synapse, flux, racine: RACINE, consoles, log });
+  const api = creerApi({ socle, cfg, db, parc, agents, alertes, taches, synapse, flux, racine: RACINE, consoles, log, canaux });
   // Données d'un compte : exportées à sa demande, neutralisées à sa suppression.
   socle.portail.exporteur = compteId => parc.donneesDe(compteId);
   socle.comptes.apresSuppression.push(compteId => parc.oublier(compteId));
@@ -135,10 +141,16 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
       if (!debit.prendre(adresseClient(req, socle.portail.proxys))) return refuser(socket, 429, 'Too Many Requests');
       const v = verifierUpgrade(req, { origines: origines(req) });
       if (!v.ok) return refuser(socket, v.code, v.erreur);
+      // Le canal d'un agent : son jeton, pas une session (il n'a pas de navigateur).
+      if (url.pathname === '/api/agent/canal') return upgradeCanal(req, socket);
       // Session du socle exigée et rôle vérifié AVANT la mise à niveau.
       const acces = autoriserWs(req);
       if (!acces) return refuser(socket, 401, 'Unauthorized');
 
+      const ecran = /^\/vnc\/([A-Za-z0-9_-]{16})\/agent$/.exec(url.pathname);
+      if (ecran) return await upgradeEcranAgent(req, socket, acces, ecran[1]);
+      const term = /^\/terminal\/([A-Za-z0-9_-]{16})$/.exec(url.pathname);
+      if (term) return await upgradeTerminal(req, socket, acces, term[1], url);
       const m = /^\/vnc\/([A-Za-z0-9_-]{16})\/(\d+)$/.exec(url.pathname);
       if (m) return await upgradeVnc(req, socket, acces, m[1], Number(m[2]));
       refuser(socket, 404, 'Not Found');
@@ -151,6 +163,66 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
   function autoriserWs(req) {
     const ctx = socle.portail.contexte(req, null);
     try { socle.portail.exiger(ctx, { role: 'membre' }); return ctx; } catch { return null; }
+  }
+
+  // Le canal d'un agent. Son jeton est vérifié avant la mise à niveau, avec le
+  // même compteur d'échecs par adresse que ses remontées : un jeton refusé ne
+  // tente pas sa chance sans fin.
+  function upgradeCanal(req, socket) {
+    const ip = adresseClient(req, socle.portail.proxys);
+    const cles = [`ip:machine:${ip}`];
+    try { socle.limiteur.controler(cles); } catch { return refuser(socket, 429, 'Too Many Requests'); }
+    const machine = agents.resoudre(String(req.headers['x-agent-token'] || ''));
+    if (!machine?.id) {
+      socle.limiteur.echec(cles);
+      socle.journal.rare(`canal-refus:${ip}`, { action: 'connexion.jeton', objet: '/api/agent/canal', ip, resultat: 'refus' });
+      return refuser(socket, 401, 'Unauthorized');
+    }
+    const ws = accepter(req, socket);
+    canaux.brancher(ws, machine);
+  }
+
+  // Prise en main (écran par l'agent, terminal) : administrateur, sous renfort
+  // récent, et réglage « prise en main » actif. Rien n'est montré à qui ne
+  // passe pas ces contrôles, et chaque ouverture va au journal de sécurité.
+  function priseEnMain(req, socket, ctx, ref) {
+    if (!cfg.priseEnMain) { refuser(socket, 403, 'Forbidden'); return null; }
+    try { socle.portail.exiger(ctx, { role: 'admin', renfort: true }); } catch { refuser(socket, 403, 'Forbidden'); return null; }
+    const id = parc.idDe(ref);
+    if (!id) { refuser(socket, 404, 'Not Found'); return null; }
+    return { id, m: parc.machine(id) };
+  }
+
+  async function upgradeEcranAgent(req, socket, ctx, ref) {
+    const cible = priseEnMain(req, socket, ctx, ref); if (!cible) return;
+    const offert = String(req.headers['sec-websocket-protocol'] || '').split(',').map(x => x.trim());
+    const ws = accepter(req, socket, { sousProtocole: offert.includes('binary') ? 'binary' : null });
+    let f;
+    try { f = await canaux.ouvrir(cible.id, 'ecran'); } catch (e) { ws.fermerCode(1011, String(e.message).slice(0, 110)); return; }
+    socle.journal.rare(`ecran-agent:${ctx.session.id}:${cible.id}`, { acteur: ctx.session.compte, action: 'prise_en_main.ecran', objet: cible.m.host, ip: ctx.ip }, 10 * 60e3);
+    // Le pont prend la main sur la fermeture des deux côtés (un seul rappel par événement).
+    await pontFlux(ws, f, { motDePasse: f.infos.motDePasse || '' }).catch(() => { try { ws.close(); } catch { /* fermé */ } f.destroy(); });
+  }
+
+  async function upgradeTerminal(req, socket, ctx, ref, url) {
+    const cible = priseEnMain(req, socket, ctx, ref); if (!cible) return;
+    const ws = accepter(req, socket);
+    const cols = Number(url.searchParams.get('cols')) || 100, rows = Number(url.searchParams.get('rows')) || 30;
+    // Navigateur → poste : les touches en binaire, la taille en texte. Ce qui
+    // est tapé pendant que l'agent ouvre la session attend (borné), puis part.
+    let f = null, enAttente = [], taille = 0, parti = false;
+    ws.on('fermeture', () => { parti = true; f?.destroy(); });
+    ws.on('binaire', d => { if (f) f.write(d); else if ((taille += d.length) <= 64 * 1024) enAttente.push(d); });
+    ws.on('texte', t => { try { const m = JSON.parse(t); if (m?.t === 'taille' && f) f.taille(m.cols, m.rows); } catch { /* ignoré */ } });
+    try { f = await canaux.ouvrir(cible.id, 'terminal', { cols, rows }); } catch (e) { ws.fermerCode(1011, String(e.message).slice(0, 110)); return; }
+    if (parti) { f.destroy(); return; }
+    socle.journal.ecrire({ acteur: ctx.session.compte, action: 'prise_en_main.terminal', objet: cible.m.host, ip: ctx.ip });
+    for (const d of enAttente) f.write(d);
+    enAttente = null;
+    // Poste → navigateur : la sortie.
+    f.on('data', d => ws.envoyerBinaire(d));
+    f.on('close', () => { try { ws.fermerCode(1000, 'session terminée'); } catch { /* fermé */ } });
+    if (f.ferme) ws.fermerCode(1000, 'session terminée');
   }
 
   async function upgradeVnc(req, socket, ctx, ref, idx) {
@@ -178,8 +250,8 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
       log.warn?.(`NEXARC_CONSOLE_URL partage le nom d'hôte de NEXARC : les scripts des cartes restent à part, pas les cookies. Donne-lui son propre nom (README, « Consoles et cartes de gestion »).`);
     }
   }
-  const arreter = () => new Promise(r => { api.frappes?.arreterTout(); socle.arreter(); clearInterval(bCollecte); clearInterval(bAutos); clearInterval(bPurge); consoles?.arreter(); serveur.close(() => { db.close(); r(); }); serveur.closeAllConnections?.(); });
-  return { serveur, socle, cfg, db, parc, agents, alertes, taches, api, consoles, arreter };
+  const arreter = () => new Promise(r => { api.frappes?.arreterTout(); canaux.arreter(); socle.arreter(); clearInterval(bCollecte); clearInterval(bAutos); clearInterval(bPurge); consoles?.arreter(); serveur.close(() => { db.close(); r(); }); serveur.closeAllConnections?.(); });
+  return { serveur, socle, cfg, db, parc, agents, alertes, taches, api, consoles, canaux, arreter };
 }
 
 // Le processus du conteneur supervise le service et le relance quand

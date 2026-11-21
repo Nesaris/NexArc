@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ErreurHttp, Routeur, Debit, lireCorps, valider, repondreJson, egal, Frappes, FRAPPE_MAX } from '../socle/src/index.js';
 import { lienFrappe } from './vncbridge.js';
-import { DEMANDES, CIBLES, chargeRefusee } from './taches.js';
+import { DEMANDES, CIBLES, SYSTEME, chargeRefusee } from './taches.js';
+import { codeAgent, commandeMiseAJour } from './systeme.js';
 import { TYPES, typesPublics, normaliser, cibleInterdite } from './consoles.js';
 import { nodeValide, urlBureau } from './mesh.js';
 import { sousReseau, diffusionDirigee, emettre, reveilParMapmylan } from './wol.js';
@@ -50,6 +51,8 @@ const S = {
   meshNode: { mesh_node: { type: 'chaine', max: 200, defaut: '' } },
   redfish: { url: { type: 'chaine', max: 500, defaut: '' }, user: { type: 'chaine', max: 64, defaut: '' }, password: { type: 'chaine', max: 200, defaut: '' } },
   power: { action: { type: 'chaine', requis: true, parmi: Object.keys(redfish.ACTIONS) } },
+  systeme: { action: { type: 'chaine', requis: true, parmi: SYSTEME } },
+  priseEnMain: { type: { type: 'chaine', requis: true, parmi: ['ecran', 'terminal'] } },
   hote: {
     host: { type: 'chaine', requis: true, max: 60, motif: NOM_HOTE }, ip: { type: 'chaine', max: 45, defaut: '' },
     site: { type: 'chaine', max: 40, defaut: 'Matériel', motif: NOM_PARC }, ctype: { type: 'chaine', requis: true, parmi: Object.keys(TYPES) },
@@ -97,7 +100,7 @@ function causeCarte(e) {
 // exige (lecture, membre, admin). La déclaration ne remplace pas le contrôle,
 // fait dans le gestionnaire : l'essai « autorisation » balaie toutes les routes
 // et vérifie que l'un et l'autre concordent.
-export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synapse, flux, racine, consoles, log = console }) {
+export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synapse, flux, racine, consoles, log = console, canaux = null }) {
   const r = new Routeur();
   const { portail, journal, limiteur } = socle;
   const debitReveil = new Debit({ max: 30 }), debitPower = new Debit({ max: 20 }), debitIngest = new Debit({ max: cfg.ingestMinute });
@@ -147,7 +150,17 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
   const machine = ref => parc.idDe(ref) ?? (() => { throw new ErreurHttp(404, 'Machine introuvable.'); })();
   const meshActif = () => !!cfg.meshUrl;
   // L'état que l'interface redessine après chaque geste.
-  const etatParc = () => ({ ...parc.etat(), intervalle: cfg.intervalle, mesh_enabled: meshActif() });
+  // Le code de l'agent distribué (et son empreinte), lu une fois : il change
+  // avec l'image, pas pendant qu'elle tourne.
+  let agentDistribue = null;
+  const codeDistribue = () => (agentDistribue ??= codeAgent(racine));
+  // Chaque machine dit si son agent tient son canal, et ce qu'il sait faire.
+  const etatParc = () => {
+    const e = parc.etat();
+    const version = codeDistribue().version;
+    if (canaux) for (const m of e.machines || []) if (m.source === 'agent') m.canal = { ...canaux.etatParRef(m.id), version_serveur: version };
+    return { ...e, intervalle: cfg.intervalle, mesh_enabled: meshActif(), prise_en_main: !!cfg.priseEnMain };
+  };
 
   // Corps validé (limite adaptée à l'inventaire d'un agent).
   const corps = async (ctx, schema, gros = false) => valider(await lireCorps(ctx.req, { limite: gros ? 512 * 1024 : 64 * 1024 }), schema);
@@ -458,6 +471,77 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
     return { ok: true, mac, methods: methodes };
   }, { hub: true, role: 'membre' });
 
+  // Gestes sur le système d'une machine à agent : l'arrêter, la redémarrer,
+  // préparer son réveil par le réseau ou son écran. Chacun interrompt ou
+  // modifie un système en marche : rôle admin et renfort récent, journalisé.
+  r.post('/api/machines/:ref/systeme', async ctx => {
+    session(ctx, { role: 'admin', renfort: true });
+    const b = await corps(ctx, S.systeme);
+    if (!debitPower.prendre(ctx.ip)) throw new ErreurHttp(429, 'Trop d\'actions, patiente un instant.');
+    const id = machine(ctx.params.ref);
+    const m = parc.machine(id);
+    if (m.source !== 'agent') throw new ErreurHttp(409, 'Cette machine n\'a pas d\'agent : son alimentation passe par sa carte de gestion.');
+    if (taches.enAttente(id) >= 20) throw new ErreurHttp(429, 'Trop de tâches en attente sur cette machine.');
+    const t = taches.creer(id, { kind: b.action, auteur: ctx.session.compteLigne.identifiant, auteurCompte: ctx.session.compte });
+    journal.ecrire({ acteur: ctx.session.compte, action: `systeme.${b.action}`, objet: m.host, ip: ctx.ip });
+    if (b.action === 'eteindre' || b.action === 'redemarrer') synapse?.alimentation(m.host, b.action === 'eteindre' ? 'arret' : 'redemarrer');
+    return { ok: true, id: t.ref, immediat: !!canaux?.connecte(id) };
+  }, { role: 'admin' });
+
+  // Avant d'ouvrir l'écran ou le terminal (WebSocket, qui ne sait pas demander
+  // le renfort) : la même exigence ici, en HTTP, pour que l'interface le
+  // demande ; et ce que l'agent dit ne pas pouvoir faire, en clair.
+  r.post('/api/machines/:ref/prise-en-main', async ctx => {
+    session(ctx, { role: 'admin', renfort: true });
+    const b = await corps(ctx, S.priseEnMain);
+    if (!cfg.priseEnMain) throw new ErreurHttp(409, 'Prise en main désactivée dans les réglages (NEXARC_REMOTE_CONTROL).');
+    const id = machine(ctx.params.ref);
+    const c = canaux?.etatPublic(id) || { connecte: false };
+    if (!c.connecte) throw new ErreurHttp(409, 'L\'agent de cette machine n\'a pas de canal ouvert : hors ligne, ou agent d\'avant 2.7.0 (mets-le à jour).');
+    if (b.type === 'terminal' && !c.terminal) throw new ErreurHttp(409, 'Terminal désactivé sur ce poste.');
+    if (b.type === 'ecran' && c.ecran.etat === 'indisponible') throw new ErreurHttp(409, c.ecran.raison || 'Pas d\'écran sur ce poste.');
+    // L'écran est essayé ici : l'agent lance son serveur d'écran (x11vnc reste
+    // ensuite en marche) et, s'il ne peut pas, sa raison s'affiche en clair au
+    // lieu d'une console qui se ferme sans rien dire.
+    if (b.type === 'ecran') {
+      try { (await canaux.ouvrir(id, 'ecran')).destroy(); } catch (e) { throw new ErreurHttp(409, String(e.message).slice(0, 300)); }
+    }
+    return { ok: true, ecran: c.ecran };
+  }, { role: 'admin' });
+
+  // Mettre un agent à jour avec le code que ce serveur distribue. Un agent
+  // récent reçoit le geste prévu ; un agent d'avant le canal, la commande que
+  // le serveur écrit lui-même (systeme.js), qui ne dépend pas de la commande libre.
+  const lancerMiseAJour = (id, s) => {
+    const m = parc.machine(id);
+    const { sha256 } = codeDistribue();
+    const recent = canaux?.etatPublic(id)?.maj;
+    const t = recent
+      ? taches.creer(id, { kind: 'agent-maj', payload: sha256, auteur: s.compteLigne.identifiant, auteurCompte: s.compte })
+      : taches.creer(id, { kind: 'cmd', payload: commandeMiseAJour(m.oskind, sha256), auteur: s.compteLigne.identifiant, auteurCompte: s.compte, sensible: true });
+    return { t, m, recent: !!recent };
+  };
+  r.post('/api/machines/:ref/agent-maj', ctx => {
+    const s = session(ctx, { role: 'admin', renfort: true });
+    const id = machine(ctx.params.ref);
+    if (parc.machine(id).source !== 'agent') throw new ErreurHttp(409, 'Cette machine n\'a pas d\'agent.');
+    if (taches.enAttente(id) >= 20) throw new ErreurHttp(429, 'Trop de tâches en attente sur cette machine.');
+    const { t, m, recent } = lancerMiseAJour(id, s);
+    journal.ecrire({ acteur: s.compte, action: 'agent.mise_a_jour', objet: m.host, ip: ctx.ip, details: { version: codeDistribue().version, voie: recent ? 'agent' : 'commande' } });
+    return { ok: true, id: t.ref, version: codeDistribue().version };
+  }, { role: 'admin' });
+  // Tous les agents en ligne dont le code diffère de celui distribué.
+  r.post('/api/agents/maj', ctx => {
+    const s = session(ctx, { role: 'admin', renfort: true });
+    const { version } = codeDistribue();
+    const ids = db.prepare("SELECT id, last_report FROM machines WHERE source = 'agent'").all()
+      .filter(a => parc.enLigne(a.last_report) && canaux?.etatPublic(a.id)?.version !== version && taches.enAttente(a.id) < 20)
+      .map(a => a.id);
+    for (const id of ids) lancerMiseAJour(id, s);
+    journal.ecrire({ acteur: s.compte, action: 'agent.mise_a_jour', objet: 'parc', ip: ctx.ip, details: { version, n: ids.length } });
+    return { ok: true, n: ids.length, version };
+  }, { role: 'admin' });
+
   r.get('/api/automations', ctx => { session(ctx); return { automations: parc.automatisations() }; }, { role: 'lecture' });
   // Une automatisation « commande libre » est une commande libre répétée : même
   // réglage (NEXARC_ALLOW_EXEC), même rôle, même renfort, à chaque geste qui
@@ -632,7 +716,20 @@ export function creerApi({ socle, cfg, db, parc, agents, alertes, taches, synaps
 
   r.post('/api/agent/jobs', ctx => {
     const m = agentDe(ctx);
-    return taches.relever(m.id, cfg.delaiTache);
+    const { sha256, version } = codeDistribue();
+    // L'agent récent compare cette empreinte à la sienne : différente, il se
+    // met à jour de lui-même (sauf « maj_auto » à false dans sa configuration).
+    return { ...taches.relever(m.id, cfg.delaiTache), agent: { sha256, version } };
+  }, { public: true });
+
+  // Le code de l'agent, à un agent inscrit seulement (son jeton) : il vérifie
+  // l'empreinte annoncée avant de remplacer quoi que ce soit.
+  r.get('/api/agent/code', ctx => {
+    agentDe(ctx);
+    const { code, sha256 } = codeDistribue();
+    ctx.res.writeHead(200, { 'Content-Type': 'text/x-python; charset=utf-8', 'Content-Length': code.length, 'Cache-Control': 'no-store', 'X-Agent-Sha256': sha256 });
+    ctx.res.end(code);
+    return undefined;
   }, { public: true });
 
   r.post('/api/agent/jobs/:ref/result', async ctx => {

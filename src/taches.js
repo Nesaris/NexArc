@@ -8,7 +8,12 @@
 // est identifié par son jeton, jamais par un nom qu'il choisit.
 import { nouvelleRef, secondes, transaction } from './base.js';
 
-export const KINDS = new Set(['cmd', 'install', 'uninstall', 'inventory', 'update', 'wol']);
+export const KINDS = new Set(['cmd', 'install', 'uninstall', 'inventory', 'update', 'wol', 'eteindre', 'redemarrer', 'reveil-prep', 'preparer-ecran', 'agent-maj']);
+// Gestes sur le système, créés par leurs seules routes (admin sous renfort) :
+// arrêter, redémarrer, préparer le réveil par le réseau, préparer l'écran.
+// Aucune charge : l'agent sait quoi faire. « agent-maj » (mise à jour de
+// l'agent) porte l'empreinte du code attendu, écrite par le serveur.
+export const SYSTEME = ['eteindre', 'redemarrer', 'reveil-prep', 'preparer-ecran'];
 export const CIBLES = new Set(['tous', 'site', 'host', 'oskind']);
 // Ce qu'un opérateur, une automatisation ou le Hub peut demander. « wol » n'en
 // fait pas partie : seule la route de réveil en crée, avec l'adresse MAC et la
@@ -24,12 +29,15 @@ export function chargeRefusee(kind, payload) {
   if (kind === 'update') return payload && !PAQUET.test(payload) ? 'Nom de paquet invalide.' : null;
   if (kind === 'install' || kind === 'uninstall') return PAQUET.test(payload) ? null : 'Nom de paquet invalide.';
   if (kind === 'cmd') return payload ? null : 'Commande manquante.';
+  if (SYSTEME.includes(kind)) return payload ? 'Ce geste ne prend aucune charge.' : null;
+  if (kind === 'agent-maj') return /^[0-9a-f]{64}$/.test(payload) ? null : 'Empreinte du code de l\'agent attendue.';
   return 'Type de tâche non admis.';
 }
 
 export class Taches {
   constructor(db, { parc, synapse, journal, flux, commandeLibre = false }) {
     this.db = db; this.parc = parc; this.synapse = synapse; this.journal = journal; this.flux = flux; this.commandeLibre = commandeLibre;
+    this.surCreation = null;   // le canal de l'agent : la tâche part sans attendre la relève
   }
 
   // auteur : ce qui s'affiche (identifiant, « hub »), auteurCompte : le compte
@@ -41,6 +49,7 @@ export class Taches {
       VALUES(?,?,?,?,?,'attente',?,?,?)`).run(ref, machineId, kind, payload, sensible ? 1 : 0, t, auteur || null, auteurCompte);
     // Trace d'exécution : toujours traçable, jamais le contenu d'une commande libre.
     this.journal?.ecrire({ acteur: auteurCompte || auteur || null, action: 'tache.creee', objet: this.parc.machine(machineId)?.host || null, details: { kind, ...(sensible ? {} : { apercu: String(payload).slice(0, 80) }) } });
+    try { this.surCreation?.(machineId); } catch { /* la relève ordinaire la prendra */ }
     return this.db.prepare('SELECT * FROM taches WHERE ref = ?').get(ref);
   }
 

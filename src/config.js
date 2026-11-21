@@ -28,6 +28,9 @@ export const SPEC_NEXARC = {
   // Commande libre (tâche « cmd ») : autorisée globalement ? Même à 1, elle
   // reste réservée au rôle admin sous renfort récent.
   commandeLibre: { env: 'NEXARC_ALLOW_EXEC', type: 'booleen', defaut: false },
+  // Prise en main par l'agent (écran et terminal) : active par défaut, toujours
+  // réservée au rôle admin sous renfort récent, chaque ouverture journalisée.
+  priseEnMain: { env: 'NEXARC_REMOTE_CONTROL', type: 'booleen', defaut: true },
   // Délai d'exécution d'une tâche par l'agent, borné.
   delaiTache: { env: 'NEXARC_JOB_TIMEOUT', type: 'entier', min: 10, max: 1800, defaut: 120 },
   // Seuils des alertes. Hors ligne : au-delà du simple marquage (qui suit
@@ -79,6 +82,8 @@ export const REGLAGES_NEXARC = [
   { env: 'NEXARC_ALERT_PATCH_DAYS', groupe: 'Alertes', libelle: 'Alerte correctifs en attente depuis (jours)', depuis: '2.5.0' },
   { env: 'NEXARC_ALERT_DISK_PERCENT', groupe: 'Alertes', libelle: 'Alerte disque plein à (%)', depuis: '2.5.0' },
   { env: 'NEXARC_ALERT_RISK', groupe: 'Alertes', libelle: 'Alerte risque à partir de (sur 100)', depuis: '2.5.0' },
+  { env: 'NEXARC_REMOTE_CONTROL', groupe: 'Prise en main à distance', libelle: 'Écran et terminal par l’agent', depuis: '2.7.0',
+    aide: 'L’agent ouvre lui-même la connexion : aucun port à ouvrir sur les machines. Réservé aux administrateurs, identité confirmée, et chaque ouverture va au journal.' },
   { env: 'NEXARC_MESH_URL', groupe: 'Prise en main à distance', libelle: 'Adresse de MeshCentral', exemple: 'https://mesh.exemple.org', depuis: '2.5.0',
     aide: 'Facultatif : bureau à distance par un serveur MeshCentral. Vide : désactivé.' },
   { env: 'NEXARC_MESH_USER', groupe: 'Prise en main à distance', libelle: 'Utilisateur MeshCentral', depuis: '2.5.0' },
