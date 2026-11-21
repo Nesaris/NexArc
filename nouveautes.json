@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.7.1",
+    "date": "2026-11-21",
+    "points": [
+      "Correctif de sécurité : l’image passe à Node 24.22.3."
+    ]
+  },
+  {
     "version": "2.7.0",
     "date": "2026-11-21",
     "points": [
