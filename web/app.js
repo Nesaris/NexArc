@@ -54,6 +54,7 @@ ajouterPictos({
   reglages: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="7.5" cy="17" r="2.2"/>',
   jauge: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3 1.8"/>',
   reveil: '<path d="M12 3v9M8 6a7 7 0 1 0 8 0"/>',
+  alim: '<path d="M12 3.5v7.5"/><path d="M6.7 6.9a7.4 7.4 0 1 0 10.6 0"/>',
   ecran2: '<rect x="3" y="5" width="18" height="11" rx="2"/><path d="M7 20h10M12 16v4"/>',
   puce: '<rect x="6" y="6" width="12" height="12" rx="2.4"/><rect x="9.5" y="9.5" width="5" height="5" rx="1.2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
   disque: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4"/>',
@@ -135,7 +136,7 @@ async function rafraichir() {
 function appliquerEtat(st) {
   if (!st) return;
   E.machines = st.machines; E.alertes = st.alertes; E.patches = st.patches; E.autos = st.autos; E.feed = st.feed; E.parcs = st.parcs || [];
-  E.mesh = !!st.mesh_enabled; if (st.intervalle) E.interval = st.intervalle;
+  E.mesh = !!st.mesh_enabled; E.priseEnMain = st.prise_en_main !== false; if (st.intervalle) E.interval = st.intervalle;
   const online = E.machines.filter(m => m.online).length, total = E.machines.filter(m => m.source === 'agent').length || 1;
   railOnline.textContent = `${online} / ${E.machines.filter(m => m.source === 'agent').length}`;
   railBar.style.width = Math.round(online / total * 100) + '%';
@@ -144,6 +145,12 @@ function appliquerEtat(st) {
   // postes garde son filtre et sa recherche ; la fiche, son onglet).
   const p = location.hash.slice(1).split('/')[0];
   if (['over', 'parcs', 'parc', 'alertes', 'correctifs', 'autos'].includes(p)) aller(p, { ref: E.courante });
+  // La fiche garde son onglet : seuls ses boutons d'action suivent (agent
+  // connecté, écran prêt, machine allumée).
+  if (p === 'detail') {
+    const m = E.machines.find(x => x.id === E.courante), zone = stage.querySelector('.detailhead .actions');
+    if (m && zone) zone.replaceChildren(...actionsDetail(m));
+  }
 }
 const alertesOuvertes = () => E.alertes.filter(a => a.etat !== 'resolue');
 function majCompteur(k) {
@@ -584,7 +591,16 @@ function actionsDetail(m) {
     const actions = [['on', 'Allumer'], ...(admin ? [['arret', 'Arrêter'], ['redemarrer', 'Redémarrer']] : [])];
     out.push(h('span', { class: 'powerbox' }, ...actions.map(([a, l]) => h('button', { class: 'btn sm', type: 'button', text: l, onclick: () => alimentation(m, a) }))));
   }
-  if (m.source === 'agent' && m.wol && !m.online) out.push(h('button', { class: 'btn', type: 'button', onclick: () => reveiller(m) }, icone('reveil', 15), 'Réveiller'));
+  if (m.source === 'agent' && m.wol && !m.online) out.push(h('button', { class: 'btn', type: 'button', onclick: () => reveiller(m) }, icone('reveil', 15), 'Allumer'));
+  // Prise en main par l'agent (son canal) : écran et terminal, administrateur.
+  const canal = m.canal || {};
+  if (m.source === 'agent' && admin && E.priseEnMain && canal.connecte) {
+    const ec = canal.ecran || {};
+    if (ec.etat === 'pret') out.push(h('button', { class: 'btn solid', type: 'button', onclick: () => ouvrirEcranAgent(m) }, icone('ecran2', 15), 'Écran'));
+    else if (ec.etat === 'a-installer' || ec.etat === 'a-activer') out.push(h('button', { class: 'btn', type: 'button', title: ec.raison || '', onclick: () => preparerEcran(m) }, icone('ecran2', 15), 'Préparer l\'écran'));
+    if (canal.terminal) out.push(h('button', { class: 'btn', type: 'button', onclick: () => ouvrirTerminal(m) }, icone('terminal', 15), 'Terminal'));
+  }
+  if (m.source === 'agent' && admin) out.push(h('button', { class: 'btn', type: 'button', title: 'Arrêter, redémarrer, réveil, agent', onclick: () => menuSysteme(m) }, icone('alim', 15), 'Système'));
   const items = m.consoles || [];
   if (items.length) out.push(h('button', { class: 'btn solid', type: 'button', onclick: () => ouvrirConsole(m, 0) }, icone('ecran2', 15), items[0].label));
   // Déclarer un accès distant (où le serveur se connecte) : administrateur.
@@ -664,6 +680,53 @@ async function alimentation(m, action) {
   if (action !== 'on' && !await confirmer(`${labels[action]} ${m.host} ?`, 'Action d\'alimentation via Redfish.', { danger: true, oui: labels[action] })) return;
   try { const r = await api.post(`/api/machines/${m.id}/power`, { action }); toast(`${labels[action]} envoyé (${r.reset_type}).`); }
   catch (e) { toast(e.message, true); }
+}
+// Gestes sur le système d'une machine à agent (administrateur, renfort demandé par le serveur).
+async function menuSysteme(m) {
+  const canal = m.canal || {};
+  const ancien = !canal.connecte || (canal.version_serveur && canal.version !== canal.version_serveur);
+  const etatAgent = canal.connecte ? `Agent ${canal.version || '?'} · canal ouvert` : (m.online ? 'Agent sans canal (version antérieure à 2.7.0, ou canal coupé)' : 'Machine hors ligne');
+  const choix = await dialogue({
+    titre: `Système · ${m.host}`, texte: etatAgent, liste: true,
+    boutons: [
+      ...(m.online ? [{ texte: 'Redémarrer', valeur: 'redemarrer' }, { texte: 'Éteindre', classe: 'danger', valeur: 'eteindre' }] : []),
+      ...(!m.online && m.wol ? [{ texte: 'Allumer (réveil par le réseau)', valeur: 'allumer' }] : []),
+      ...(m.online ? [{ texte: 'Préparer le réveil par le réseau', valeur: 'reveil-prep' }] : []),
+      ...(m.online && ancien ? [{ texte: `Mettre à jour l'agent${canal.version_serveur ? ` (${canal.version_serveur})` : ''}`, classe: 'solid', valeur: 'maj' }] : []),
+      { texte: 'Fermer', valeur: null },
+    ],
+  });
+  if (!choix) return;
+  if (choix === 'allumer') return reveiller(m);
+  if (choix === 'maj') {
+    try { const r = await api.post(`/api/machines/${m.id}/agent-maj`); toast(`Mise à jour vers ${r.version} envoyée : l'agent redémarre dans la minute.`); } catch (e) { toast(e.message, true); }
+    return;
+  }
+  const textes = {
+    eteindre: [`Éteindre ${m.host} ?`, 'La machine s\'arrête 5 secondes après réception. Pour la rallumer : « Allumer » (réveil par le réseau, s\'il est préparé) ou sa carte de gestion.', 'Éteindre'],
+    redemarrer: [`Redémarrer ${m.host} ?`, 'Les sessions ouvertes sur la machine sont fermées.', 'Redémarrer'],
+    'reveil-prep': [`Préparer le réveil de ${m.host} ?`, 'L\'agent active le réveil par paquet magique sur ses cartes filaires (et coupe le démarrage rapide sous Windows). Le réglage « Wake on LAN » du BIOS reste à vérifier.', 'Préparer'],
+  }[choix];
+  if (!await confirmer(textes[0], textes[1], { danger: choix !== 'reveil-prep', oui: textes[2] })) return;
+  try { const r = await api.post(`/api/machines/${m.id}/systeme`, { action: choix }); toast(r.immediat ? 'Envoyé : l\'agent l\'a reçu.' : 'Envoyé : l\'agent le prendra à sa prochaine relève.'); } catch (e) { toast(e.message, true); }
+}
+async function preparerEcran(m) {
+  const ec = m.canal?.ecran || {};
+  if (!await confirmer(`Préparer l'écran de ${m.host} ?`, ec.raison || 'L\'agent installe et règle le serveur d\'écran local (joint en boucle locale seulement).', { oui: 'Préparer' })) return;
+  try { await api.post(`/api/machines/${m.id}/systeme`, { action: 'preparer-ecran' }); toast('Préparation envoyée : le bouton « Écran » apparaît une fois prête.'); } catch (e) { toast(e.message, true); }
+}
+async function priseEnMain(m, type) {
+  try { await api.post(`/api/machines/${m.id}/prise-en-main`, { type }); return true; } catch (e) { toast(e.message, true); return false; }
+}
+async function ouvrirEcranAgent(m) {
+  if (!await priseEnMain(m, 'ecran')) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  await (await ecranDistant()).ouvrirVncDistant({ url: `${proto}://${location.host}/vnc/${m.id}/agent`, titre: `Écran · ${m.host}`, cle: `${m.id}/agent` });
+}
+async function ouvrirTerminal(m) {
+  if (!await priseEnMain(m, 'terminal')) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  await (await ecranDistant()).ouvrirTerminalDistant({ url: `${proto}://${location.host}/terminal/${m.id}`, titre: `Terminal · ${m.host}` });
 }
 async function reveiller(m) {
   try { const r = await api.post(`/api/machines/${m.id}/wake`); toast('Réveil envoyé — ' + r.methods.join(', ') + '.'); } catch (e) { toast(e.message, true); }
@@ -920,7 +983,7 @@ function dessinerSpark(el, valeurs, couleur) {
     path(`M${pts}`, { fill: 'none', stroke: couleur, 'stroke-width': '1.6' }));
 }
 
-let relectureAlerte = null;
+let relectureAlerte = null, relectureCanal = null;
 function brancherFlux() {
   const src = new EventSource('/api/activite');
   src.onmessage = ev => {
@@ -929,6 +992,8 @@ function brancherFlux() {
       if (e.t === 'flux') { E.feed = [{ html: e.html, ip: e.ip, cree: e.cree }, ...E.feed].slice(0, 8); if (location.hash.startsWith('#over')) peindreFeed(); }
       // Une alerte ouverte ou résolue : l'état est relu (une rafale ne relit qu'une fois).
       if (e.t === 'alerte' && !relectureAlerte) relectureAlerte = setTimeout(() => { relectureAlerte = null; rafraichir(); }, 400);
+      // Un agent qui se connecte, se coupe ou change ce qu'il sait faire (écran prêt).
+      if (e.t === 'canal' && !relectureCanal) relectureCanal = setTimeout(() => { relectureCanal = null; rafraichir(); }, 800);
     } catch { /* ligne non-JSON (ping) */ }
   };
   src.onerror = () => { /* EventSource se reconnecte seul */ };

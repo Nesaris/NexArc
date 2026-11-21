@@ -11,7 +11,7 @@
 //
 // Tout ce qui s'affiche vit dans la fenêtre de la console : en plein écran du
 // navigateur, rien d'autre de la page n'est visible.
-import { h, icone, ajouterPictos } from '/socle/compte.js';
+import { h, icone, ajouterPictos, dialogue } from '/socle/compte.js';
 import { DISPOSITIONS, appuis, evenementsCaractere } from '/socle/clavier.js';
 
 ajouterPictos({ agrandir: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' });
@@ -349,6 +349,17 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
       rfb.addEventListener('connect', () => { connecte = true; c.statut.textContent = 'connecté'; rfb.focus(); });
       rfb.addEventListener('disconnect', e => { connecte = false; c.statut.textContent = e.detail?.clean ? 'déconnecté' : 'connexion perdue'; });
       rfb.addEventListener('securityfailure', () => { c.statut.textContent = 'échec d\'authentification'; });
+      // Un Mac sans mot de passe VNC : le serveur demande le compte du Mac
+      // lui-même (authentification Apple), tapé ici et envoyé chiffré par noVNC.
+      rfb.addEventListener('credentialsrequired', async e => {
+        const types = e.detail?.types || ['password'];
+        const nom = h('input', { class: 'field', autocomplete: 'username', placeholder: 'Nom du compte' });
+        const mdp = h('input', { class: 'field', type: 'password', autocomplete: 'current-password', placeholder: 'Mot de passe' });
+        const ok = await dialogue({ titre: 'Compte de la machine', texte: 'Le partage d\'écran demande un compte de cette machine.',
+          contenu: [types.includes('username') ? nom : null, mdp], boutons: [{ texte: 'Annuler', valeur: false }, { texte: 'Se connecter', classe: 'solid', valeur: true }] });
+        if (!ok) { rfb.disconnect(); return; }
+        rfb.sendCredentials({ username: nom.value, password: mdp.value });
+      });
       // Ce que la machine copie : gardé ici, et dans le presse-papiers d'ici
       // juste après un Copier (si le navigateur l'accepte).
       rfb.addEventListener('clipboard', e => {
@@ -360,4 +371,88 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
   }
   await connecter();
   suivre();
+}
+
+// Terminal d'une machine, par son agent (xterm.js). Les touches partent en
+// binaire, la taille de la fenêtre en texte ; la sortie arrive en binaire.
+let xtermPret = null;
+function chargerXterm() {
+  xtermPret ??= (async () => {
+    if (!document.querySelector('link[data-xterm]')) {
+      document.head.append(h('link', { rel: 'stylesheet', href: '/vendor/xterm/xterm.css', 'data-xterm': '1' }));
+    }
+    await import('/vendor/xterm/xterm.js');
+    await import('/vendor/xterm/addon-fit.js');
+    return { Terminal: globalThis.Terminal, FitAddon: globalThis.FitAddon.FitAddon };
+  })();
+  return xtermPret;
+}
+
+export async function ouvrirTerminalDistant({ url, titre }) {
+  const zone = h('div', { class: 'remote-frame terminal-zone' });
+  let ws = null, term = null, ajuste = null, vivant = false, feuille = null, miroir = null, observateur = null;
+  const c = coquille({
+    titre, contenu: [zone],
+    surFermer: () => {
+      vivant = false; try { ws?.close(); } catch { /* fermé */ } term?.dispose(); miroir?.disconnect(); observateur?.disconnect();
+      if (feuille) document.adoptedStyleSheets = document.adoptedStyleSheets.filter(x => x !== feuille);
+    },
+    menu: () => [
+      { titre: 'Session', items: [
+        { texte: 'Ctrl+C', inactif: !vivant, agir: () => envoyer('\x03') },
+        { texte: 'Ctrl+D', inactif: !vivant, agir: () => envoyer('\x04') },
+        { texte: 'Coller', inactif: !vivant, agir: () => navigator.clipboard?.readText().then(t => t && envoyer(t), () => c.dire('Le navigateur n’a pas donné le presse-papiers.', true)) },
+        { texte: 'Reconnecter', agir: () => connecter() },
+      ] },
+      { titre: 'Affichage', items: c.itemsPlein() },
+    ],
+  });
+  const encodeur = new TextEncoder();
+  const envoyer = t => { if (ws?.readyState === 1) ws.send(encodeur.encode(t)); term?.focus(); };
+  const taille = () => { try { ajuste?.fit(); } catch { /* fenêtre cachée */ } if (ws?.readyState === 1 && term) ws.send(JSON.stringify({ t: 'taille', cols: term.cols, rows: term.rows })); };
+  c.surPlein = () => setTimeout(taille, 60);
+  observateur = new ResizeObserver(() => taille());
+
+  let X;
+  try { X = await chargerXterm(); } catch { c.statut.textContent = 'terminal indisponible'; return; }
+  term = new X.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: 5000, theme: { background: '#0a0a0a' } });
+  ajuste = new X.FitAddon();
+  term.loadAddon(ajuste);
+  // xterm.js écrit ses couleurs et ses mesures dans des éléments <style>, que
+  // la politique de contenu (style-src 'self') refuse. Leur texte est recopié
+  // dans une feuille construite (CSSOM), que la politique laisse passer : rien
+  // n'est relâché, et le terminal garde ses couleurs.
+  feuille = new CSSStyleSheet();
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, feuille];
+  const recopier = () => feuille.replaceSync([...zone.querySelectorAll('style')].map(x => x.textContent).join('\n'));
+  miroir = new MutationObserver(recopier);
+  miroir.observe(zone, { subtree: true, childList: true, characterData: true });
+  term.open(zone);
+  recopier();
+  try { ajuste.fit(); } catch { /* mesuré plus tard */ }
+  term.onData(d => envoyer(d));
+  term.onBinary(d => { if (ws?.readyState === 1) ws.send(Uint8Array.from(d, ch => ch.charCodeAt(0) & 0xff)); });
+  observateur.observe(zone);
+
+  function connecter() {
+    try { ws?.close(); } catch { /* fermé */ }
+    vivant = false;
+    c.statut.textContent = 'connexion…';
+    const u = new URL(url); u.searchParams.set('cols', term.cols); u.searchParams.set('rows', term.rows);
+    ws = new WebSocket(u.href);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { c.statut.textContent = 'en attente du poste…'; };
+    let premier = true;
+    ws.onmessage = ev => {
+      if (premier) { premier = false; vivant = true; c.statut.textContent = 'connecté'; taille(); }
+      term.write(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data));
+    };
+    ws.onclose = ev => {
+      vivant = false;
+      c.statut.textContent = ev.code === 1000 && !premier ? 'session terminée' : (ev.reason || 'connexion perdue');
+      if (ev.reason && premier) c.dire(ev.reason, true);
+    };
+    term.focus();
+  }
+  connecter();
 }

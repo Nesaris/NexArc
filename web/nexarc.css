@@ -20,6 +20,8 @@
 .chk{display:flex;gap:8px;align-items:center;font-size:13px}
 .mldim{margin-left:8px;font-size:11px;color:var(--muted)}
 .vncscreen{background:#0a0a0a;overflow:hidden}
+.terminal-zone{background:#0a0a0a;padding:6px 8px;overflow:hidden}
+.terminal-zone .xterm{height:100%}
 .pt12{padding-top:12px}.pt10{padding-top:10px}
 /* Bouton dont le libellé peut passer à la ligne : le .btn du socle est en
    nowrap, ce qui déborde sous 400 px sur un libellé long (dialogue d'ajout). */
