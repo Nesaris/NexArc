@@ -364,7 +364,10 @@ async function pageMachines() {
   peindre();
   return h('div', { class: 'page' },
     h('div', { class: 'headrow' }, h('div', {}, h('h1', { class: 'title', text: 'Postes' }), h('p', { class: 'lede', text: 'Chaque poste exécute l\'agent NEXARC et remonte son état.' })),
-      h('div', { class: 'actions' }, peutAgir ? h('button', { class: 'btn solid', type: 'button', onclick: () => dialogueInscription(false) }, icone('plus', 15), 'Ajouter un poste') : null)),
+      h('div', { class: 'actions' },
+        // Les agents dont le code diffère de celui que NEXARC distribue (ou d'avant le canal).
+        admin && aMettreAJour().length ? h('button', { class: 'btn', type: 'button', onclick: () => majAgents() }, icone('correctif', 15), `Mettre à jour les agents (${aMettreAJour().length})`) : null,
+        peutAgir ? h('button', { class: 'btn solid', type: 'button', onclick: () => dialogueInscription(false) }, icone('plus', 15), 'Ajouter un poste') : null)),
     h('div', { class: 'card' }, h('div', { class: 'pad rowline' }, chips, q, compte),
       h('div', { class: 'tw' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Poste' }), h('th', { class: 'cache-m', text: 'Parc' }), h('th', { class: 'cache-l', text: 'Système' }), h('th', { class: 'cache-l', text: 'CPU' }), h('th', { class: 'cache-s', text: 'Risque' }), h('th', { text: 'État' }))), corps))));
 }
@@ -709,6 +712,12 @@ async function menuSysteme(m) {
   }[choix];
   if (!await confirmer(textes[0], textes[1], { danger: choix !== 'reveil-prep', oui: textes[2] })) return;
   try { const r = await api.post(`/api/machines/${m.id}/systeme`, { action: choix }); toast(r.immediat ? 'Envoyé : l\'agent l\'a reçu.' : 'Envoyé : l\'agent le prendra à sa prochaine relève.'); } catch (e) { toast(e.message, true); }
+}
+const aMettreAJour = () => E.machines.filter(m => m.source === 'agent' && m.online && m.canal && (!m.canal.connecte || m.canal.version !== m.canal.version_serveur));
+async function majAgents() {
+  const n = aMettreAJour().length;
+  if (!await confirmer(`Mettre à jour ${n} agent${n > 1 ? 's' : ''} ?`, 'Chaque agent télécharge le code que NEXARC distribue, vérifie son empreinte, le remplace et redémarre son service.', { oui: 'Mettre à jour' })) return;
+  try { const r = await api.post('/api/agents/maj'); toast(`${r.n} mise${r.n > 1 ? 's' : ''} à jour envoyée${r.n > 1 ? 's' : ''} (${r.version}).`); } catch (e) { toast(e.message, true); }
 }
 async function preparerEcran(m) {
   const ec = m.canal?.ecran || {};
