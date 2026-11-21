@@ -182,18 +182,19 @@ test('autorisation : chaque route balayée sans session, en lecture seule et en 
   }
   assert.deepEqual(sansRole, [], 'chaque route non publique déclare son rôle');
   assert.deepEqual(ecarts, []);
-  assert.equal(balayees, 36, 'routes non publiques balayées');
+  assert.equal(balayees, 40, 'routes non publiques balayées');
   // Les seules routes sans session : la sonde de santé, et ce qu'un agent
   // appelle avec son code d'inscription ou son jeton (vérifiés dans la route).
   const publiques = s.api.routeur.routes.filter(r => r.options?.public).map(r => `${r.methode} ${cheminDe(r)}`).sort();
-  assert.deepEqual(publiques, ['GET /api/enroll/agent.py', 'GET /api/enroll/installateur', 'GET /api/enroll/requirements.txt', 'GET /api/enroll/script', 'GET /api/health',
+  assert.deepEqual(publiques, ['GET /api/agent/code', 'GET /api/enroll/agent.py', 'GET /api/enroll/installateur', 'GET /api/enroll/requirements.txt', 'GET /api/enroll/script', 'GET /api/health',
     'POST /api/agent/jobs', 'POST /api/agent/jobs/AAAAAAAAAAAAAAAA/result', 'POST /api/enroll/config', 'POST /api/ingest']);
   // Aucun GET ne change l'état : tirer un code, l'échanger et relever ses tâches sont des POST.
   for (const chemin of ['/api/enroll/info', '/api/enroll/config', '/api/agent/jobs']) assert.equal((await membre.get(chemin)).status, 405, `GET ${chemin}`);
   // La politique écrite ici plutôt que relue dans le routeur : une route
   // d'administration relâchée par erreur fait échouer cet essai.
   const admin = s.api.routeur.routes.filter(r => r.options?.role === 'admin').map(r => `${r.methode} ${cheminDe(r)}`).sort();
-  assert.deepEqual(admin, ['DELETE /api/automations/AAAAAAAAAAAAAAAA', 'DELETE /api/machines/AAAAAAAAAAAAAAAA', 'DELETE /api/parcs/AAAAAAAAAAAAAAAA', 'GET /api/machines/AAAAAAAAAAAAAAAA/pin', 'PATCH /api/parcs/AAAAAAAAAAAAAAAA', 'POST /api/hosts', 'POST /api/machines/AAAAAAAAAAAAAAAA/pin',
+  assert.deepEqual(admin, ['DELETE /api/automations/AAAAAAAAAAAAAAAA', 'DELETE /api/machines/AAAAAAAAAAAAAAAA', 'DELETE /api/parcs/AAAAAAAAAAAAAAAA', 'GET /api/machines/AAAAAAAAAAAAAAAA/pin', 'PATCH /api/parcs/AAAAAAAAAAAAAAAA', 'POST /api/agents/maj', 'POST /api/hosts',
+    'POST /api/machines/AAAAAAAAAAAAAAAA/agent-maj', 'POST /api/machines/AAAAAAAAAAAAAAAA/pin', 'POST /api/machines/AAAAAAAAAAAAAAAA/prise-en-main', 'POST /api/machines/AAAAAAAAAAAAAAAA/systeme',
     'PUT /api/machines/AAAAAAAAAAAAAAAA/consoles', 'PUT /api/machines/AAAAAAAAAAAAAAAA/mesh-node', 'PUT /api/machines/AAAAAAAAAAAAAAAA/redfish']);
   // Aucune console n'est plus servie sous l'origine de NEXARC.
   assert.equal((await membre.get('/console/AAAAAAAAAAAAAAAA/0/')).status, 404);
@@ -1437,4 +1438,107 @@ test('paramètres : un paramètre inconnu est refusé, même quand la route rend
     assert.equal((await lecteur.get('/api/essai-parametres?a=x')).status, 200);
     assert.equal((await lecteur.get('/api/essai-parametres?a=x&script=id')).status, 400);
   } finally { routes.pop(); }
+});
+
+test('canal d’agent : tâche immédiate, terminal et écran par l’agent, sous admin renforcé et journalisés', async () => {
+  const rfb = await fauxRfb({ motDePasse: 'mdp-agent' });
+  const { jeton } = await enroler(membre, { hostname: 'srv-canal' });
+  const mref = refMachineParHote('srv-canal');
+  const origine = `http://127.0.0.1:${s.port}`;
+  const cookies = c => [...c.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+  // Un jeton faux : refusé avant la mise à niveau.
+  await assert.rejects(connecter(`ws://127.0.0.1:${s.port}/api/agent/canal`, { entetes: { 'X-Agent-Token': 'faux-jeton-de-canal-123' } }), /401/);
+  // Le faux agent : il ouvre son canal, dit ce qu'il sait faire, sert un
+  // terminal en écho et relaie l'écran vers un serveur VNC local.
+  const agent = await connecter(`ws://127.0.0.1:${s.port}/api/agent/canal`, { entetes: { 'X-Agent-Token': jeton } });
+  const controles = [], tcp = new Map();
+  const vers = (id, d) => { const t = Buffer.alloc(4); t.writeUInt32BE(id); agent.envoyerBinaire(Buffer.concat([t, d])); };
+  agent.on('texte', t => {
+    const m = JSON.parse(t); controles.push(m);
+    if (m.t === 'ouvrir' && m.type === 'terminal') { agent.envoyerTexte(JSON.stringify({ t: 'ouvert', flux: m.flux })); vers(m.flux, Buffer.from(`invite ${m.cols}x${m.rows}$ `)); }
+    if (m.t === 'ouvrir' && m.type === 'ecran') {
+      const c = net.connect(rfb.port, '127.0.0.1', () => agent.envoyerTexte(JSON.stringify({ t: 'ouvert', flux: m.flux, motDePasse: 'mdp-agent' })));
+      c.on('data', d => vers(m.flux, d)); tcp.set(m.flux, c);
+    }
+  });
+  agent.on('binaire', b => {
+    const id = b.readUInt32BE(0), d = b.subarray(4);
+    if (tcp.has(id)) tcp.get(id).write(d); else vers(id, Buffer.concat([Buffer.from('eu:'), d]));
+  });
+  agent.envoyerTexte(JSON.stringify({ t: 'bonjour', version: '2.7.0', capacites: { terminal: true, ecran: { etat: 'pret', raison: '<b>x</b>' }, alimentation: true, maj: true, autre: 'ignoré' } }));
+  try {
+    await attendre(() => s.canaux.connecte(s.parc.idDe(mref)) && s.canaux.etatPublic(s.parc.idDe(mref)).version === '2.7.0');
+    const etat = (await membre.get('/api/state')).json.machines.find(m => m.id === mref).canal;
+    assert.deepEqual({ ...etat, depuis: 0 }, { connecte: true, version: '2.7.0', depuis: 0, terminal: true, ecran: { etat: 'pret', raison: '<b>x</b>' }, alimentation: true, maj: true, version_serveur: etat.version_serveur },
+      'vocabulaire fermé : rien d’autre de l’agent ne passe');
+    // Une tâche créée part tout de suite par le canal.
+    assert.equal((await membre.post(`/api/machines/${mref}/jobs`, { kind: 'inventory', payload: '' })).status, 200);
+    await attendre(() => controles.some(m => m.t === 'taches'));
+    // Gestes sur le système : admin seulement ; la tâche porte le geste, sans charge.
+    assert.equal((await membre.post(`/api/machines/${mref}/systeme`, { action: 'redemarrer' })).status, 403);
+    assert.equal((await admin.post(`/api/machines/${mref}/systeme`, { action: 'cmd' })).status, 400);
+    const geste = await admin.post(`/api/machines/${mref}/systeme`, { action: 'reveil-prep' });
+    assert.equal(geste.status, 200); assert.equal(geste.json.immediat, true);
+    assert.equal(s.parc.db.prepare('SELECT kind, payload FROM taches WHERE ref = ?').get(geste.json.id).kind, 'reveil-prep');
+    // Prise en main : jamais un membre ; l'administrateur sans renfort non plus.
+    assert.equal((await membre.post(`/api/machines/${mref}/prise-en-main`, { type: 'terminal' })).status, 403);
+    await assert.rejects(connecter(`ws://127.0.0.1:${s.port}/terminal/${mref}`, { entetes: { Origin: origine, Cookie: cookies(membre) } }), /403/);
+    await sansRenfort(() => assert.rejects(connecter(`ws://127.0.0.1:${s.port}/terminal/${mref}`, { entetes: { Origin: origine, Cookie: cookies(admin) } }), /403/));
+    assert.equal((await admin.post(`/api/machines/${mref}/prise-en-main`, { type: 'terminal' })).status, 200);
+    // Terminal : sortie de l'agent, touches et taille relayées.
+    const term = await connecter(`ws://127.0.0.1:${s.port}/terminal/${mref}?cols=120&rows=40`, { entetes: { Origin: origine, Cookie: cookies(admin) } });
+    const sortie = []; term.on('binaire', d => sortie.push(Buffer.from(d)));
+    await attendre(() => Buffer.concat(sortie).toString().includes('invite 120x40$ '));
+    term.envoyerBinaire(Buffer.from('ls\r'));
+    await attendre(() => Buffer.concat(sortie).toString().includes('eu:ls\r'));
+    term.envoyerTexte(JSON.stringify({ t: 'taille', cols: 9999, rows: 50 }));
+    await attendre(() => controles.some(m => m.t === 'taille' && m.cols === 500 && m.rows === 50));
+    term.close();
+    await attendre(() => controles.some(m => m.t === 'fermer'));
+    // Écran : le pont s'authentifie avec le mot de passe donné par l'agent, le navigateur voit « None ».
+    const ws = await connecter(`ws://127.0.0.1:${s.port}/vnc/${mref}/agent`, { entetes: { Origin: origine, Cookie: cookies(admin) } });
+    const recus = []; ws.on('binaire', d => recus.push(Buffer.from(d)));
+    const tout = () => Buffer.concat(recus).toString('latin1');
+    await attendre(() => tout().startsWith('RFB 003.008\n'), 3000);
+    ws.envoyerBinaire(Buffer.from('RFB 003.008\n'));
+    await attendre(() => Buffer.concat(recus).length >= 14, 3000);
+    ws.envoyerBinaire(Buffer.from([1]));
+    assert.equal(await rfb.authOk, true);
+    await attendre(() => tout().includes('APRES-AUTH'), 3000);
+    assert.ok(!tout().includes('mdp-agent'), 'le mot de passe de l’écran ne va jamais au navigateur');
+    ws.close();
+    const actions = s.parc.db.prepare("SELECT action FROM socle_journal WHERE action LIKE 'prise_en_main.%' OR action LIKE 'systeme.%'").all().map(r => r.action);
+    for (const a of ['prise_en_main.terminal', 'prise_en_main.ecran', 'systeme.reveil-prep']) assert.ok(actions.includes(a), a);
+    // L'agent coupé : l'état le dit, et ouvrir échoue proprement.
+    agent.close();
+    await attendre(() => !s.canaux.connecte(s.parc.idDe(mref)));
+    assert.equal((await admin.post(`/api/machines/${mref}/prise-en-main`, { type: 'ecran' })).status, 409);
+  } finally { for (const c of tcp.values()) c.destroy(); try { agent.close(); } catch { /* fermé */ } await rfb.fermer(); }
+});
+
+test('mise à jour de l’agent : code servi à un agent inscrit, empreinte annoncée, commande écrite par le serveur pour un ancien agent', async () => {
+  const { jeton } = await enroler(membre, { hostname: 'srv-maj' });
+  const mref = refMachineParHote('srv-maj');
+  const agentHttp = { entetes: { 'x-agent-token': jeton }, origine: null };
+  assert.equal((await membre.get('/api/agent/code', { origine: null })).status, 401);
+  const code = await membre.get('/api/agent/code', agentHttp);
+  assert.equal(code.status, 200);
+  const sha = crypto.createHash('sha256').update(fs.readFileSync(new URL('../agent/nexarc-agent.py', import.meta.url))).digest('hex');
+  assert.equal(code.entetes['x-agent-sha256'], sha);
+  const lot = (await membre.post('/api/agent/jobs', {}, agentHttp)).json;
+  assert.equal(lot.agent.sha256, sha);
+  assert.match(lot.agent.version, /^\d+\.\d+\.\d+$/);
+  // Sans canal (agent d'avant 2.7.0) : une commande que le serveur écrit, qui part même sans commande libre.
+  assert.equal((await membre.post(`/api/machines/${mref}/agent-maj`)).status, 403);
+  const r = await admin.post(`/api/machines/${mref}/agent-maj`);
+  assert.equal(r.status, 200);
+  const t = s.parc.db.prepare('SELECT kind, payload, sensible FROM taches WHERE ref = ?').get(r.json.id);
+  assert.equal(t.kind, 'cmd'); assert.equal(t.sensible, 1);
+  assert.match(t.payload, /^\/opt\/nexarc-agent\/venv\/bin\/python -c "exec\(__import__\('base64'\)\.b64decode\('[A-Za-z0-9+/=]+'\)\)"$/);
+  const programme = Buffer.from(/b64decode\('([^']+)'/.exec(t.payload)[1], 'base64').toString();
+  assert.ok(programme.includes(sha) && programme.includes('/api/agent/code') && programme.includes('redemarrer_plus_tard'));
+  const { commandeMiseAJour } = await import('../src/systeme.js');
+  assert.doesNotMatch(commandeMiseAJour('win', sha), /"/, 'Windows : aucun guillemet');
+  assert.equal(commandeMiseAJour('win', sha).split(' ').length, 3, 'Windows : ni espace dans l’argument de -c');
+  assert.throws(() => commandeMiseAJour('lin', 'pas-une-empreinte'));
 });
