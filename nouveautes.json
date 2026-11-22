@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.7.5",
+    "date": "2026-11-22",
+    "points": [
+      "Écran d’un Mac : une seule demande de compte à la fois, retirée d’elle-même dès que la connexion aboutit — plus de demande qui reste par-dessus l’écran. Une seule console écran ouverte à la fois."
+    ]
+  },
+  {
     "version": "2.7.4",
     "date": "2026-11-22",
     "points": [

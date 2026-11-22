@@ -146,7 +146,9 @@ export function ouvrirCadreDistant(url, titre) {
 // Console VNC (pont de NEXARC) par noVNC, avec les gestes de ProxLab.
 // frappe : { api, chemin, idx } — la frappe d'un texte par NEXARC lui-même
 // (POST chemin) ; cle : ce qui retient le clavier choisi pour cette console.
+let consoleVnc = null; // une seule console écran ouverte à la fois
 export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url }) {
+  if (consoleVnc) { try { consoleVnc.fermer(); } catch { /* déjà fermée */ } consoleVnc = null; }
   const ecran = h('div', { class: 'remote-frame vncscreen' });
   const recu = h('pre', { class: 'presse-recu', text: '' });
   const aTaper = h('textarea', { class: 'field presse-envoi', rows: 3, placeholder: 'Le texte à taper dans la machine', spellcheck: 'false' });
@@ -156,6 +158,9 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
   let clavier = lire(cleClavier, /^fr/i.test(navigator.language || '') ? 'fr' : 'us');
   if (!Object.hasOwn(CLAVIERS, clavier)) clavier = 'fr';
   let rfb = null, connecte = false, dernierPresse = '', copieArmee = 0;
+  let demandeCompte = false;
+  // Les demandes de compte encore à l'écran (une connexion aboutie ou une console fermée les retire).
+  const fermerDemandesCompte = () => { for (const v of document.querySelectorAll('.voile')) if (v.querySelector('h3')?.textContent === 'Compte de la machine') v.remove(); demandeCompte = false; };
   let resize = lire('nexarc-vnc-ajuster', '1') === '1', qualiteMax = lire('nexarc-vnc-qualite', '0') === '1';
   const panneau = h('div', { class: 'remote-panneau', hidden: true },
     h('div', { class: 'remote-panneau-col' }, h('b', { class: 'fs12', text: 'Copié dans la machine' }), recu,
@@ -164,7 +169,7 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
       h('div', { class: 'rowline9' }, h('button', { class: 'btn sm solid', type: 'button', onclick: () => taper(aTaper.value) }, 'Taper'), avance)));
 
   const c = coquille({
-    titre, contenu: [panneau, ecran], extra: [puce], surFermer: () => { clearTimeout(suivi); try { rfb?.disconnect(); } catch { /* fermé */ } },
+    titre, contenu: [panneau, ecran], extra: [puce], surFermer: () => { clearTimeout(suivi); fermerDemandesCompte(); consoleVnc = null; try { rfb?.disconnect(); } catch { /* fermé */ } },
     menu: () => {
       const off = !connecte;
       return [
@@ -197,6 +202,7 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
     },
   });
   c.surPlein = () => rfb?.focus();
+  consoleVnc = c;
 
   // Une touche, ou une combinaison : enfoncées dans l'ordre, relâchées à rebours.
   const combo = (...touches) => {
@@ -346,7 +352,7 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
       ecran.replaceChildren();
       rfb = new RFB(ecran, url, {});
       rfb.scaleViewport = true; rfb.clipViewport = false; rfb.resizeSession = resize; rfb.qualityLevel = qualiteMax ? 9 : 7;
-      rfb.addEventListener('connect', () => { connecte = true; c.statut.textContent = 'connecté'; rfb.focus(); });
+      rfb.addEventListener('connect', () => { connecte = true; fermerDemandesCompte(); if (c.shell.parentElement) c.shell.parentElement.style.display = ''; c.statut.textContent = 'connecté'; rfb.focus(); });
       rfb.addEventListener('disconnect', e => { connecte = false; c.statut.textContent = e.detail?.clean ? 'déconnecté' : 'connexion perdue'; });
       rfb.addEventListener('securityfailure', () => { c.statut.textContent = 'échec d\'authentification'; });
       // Un Mac sans mot de passe VNC : le serveur demande le compte du Mac
@@ -355,6 +361,8 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
         // Un dialogue posé sur <body> ne s'affiche pas dans un plein écran natif
         // (le navigateur ne rend que le sous-arbre plein écran) : on en sort d'abord
         // pour que la demande d'identifiants reste visible et saisissable.
+        if (connecte || demandeCompte) return; // une seule demande à la fois, jamais après la connexion
+        demandeCompte = true;
         if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
         // Ordre voulu : clé d'accès → identifiants → écran. La console reste
         // masquée tant que le compte n'est pas saisi : le dialogue est seul à l'écran.
@@ -366,6 +374,8 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
         const mdp = h('input', { class: 'field', type: 'password', autocomplete: 'current-password', placeholder: 'Mot de passe' });
         const ok = await dialogue({ titre: 'Compte de la machine', texte: 'Le partage d\'écran demande un compte de cette machine.',
           contenu: [types.includes('username') ? nom : null, mdp], boutons: [{ texte: 'Annuler', valeur: false }, { texte: 'Se connecter', classe: 'solid', valeur: true }] });
+        demandeCompte = false;
+        if (connecte) return; // connexion aboutie entre-temps : rien à renvoyer
         if (!ok) { c.fermer(); return; }
         if (voileConsole) voileConsole.style.display = '';
         c.statut.textContent = 'connexion…';
