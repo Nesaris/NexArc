@@ -356,12 +356,19 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
         // (le navigateur ne rend que le sous-arbre plein écran) : on en sort d'abord
         // pour que la demande d'identifiants reste visible et saisissable.
         if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
+        // Ordre voulu : clé d'accès → identifiants → écran. La console reste
+        // masquée tant que le compte n'est pas saisi : le dialogue est seul à l'écran.
+        const voileConsole = c.shell.parentElement;
+        if (voileConsole) voileConsole.style.display = 'none';
+        c.statut.textContent = 'identifiants…';
         const types = e.detail?.types || ['password'];
         const nom = h('input', { class: 'field', autocomplete: 'username', placeholder: 'Nom du compte' });
         const mdp = h('input', { class: 'field', type: 'password', autocomplete: 'current-password', placeholder: 'Mot de passe' });
         const ok = await dialogue({ titre: 'Compte de la machine', texte: 'Le partage d\'écran demande un compte de cette machine.',
           contenu: [types.includes('username') ? nom : null, mdp], boutons: [{ texte: 'Annuler', valeur: false }, { texte: 'Se connecter', classe: 'solid', valeur: true }] });
-        if (!ok) { rfb.disconnect(); return; }
+        if (!ok) { c.fermer(); return; }
+        if (voileConsole) voileConsole.style.display = '';
+        c.statut.textContent = 'connexion…';
         rfb.sendCredentials({ username: nom.value, password: mdp.value });
       });
       // Ce que la machine copie : gardé ici, et dans le presse-papiers d'ici

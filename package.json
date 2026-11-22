@@ -1,6 +1,6 @@
 {
   "name": "nexarc",
-  "version": "2.7.2",
+  "version": "2.7.3",
   "description": "Supervision et gestion de parc auto-hébergées : agents, tâches distantes, consoles intégrées, réveil réseau.",
   "type": "module",
   "private": true,

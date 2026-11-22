@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.7.3",
+    "date": "2026-11-22",
+    "points": [
+      "Prise en main → Écran sur un Mac : l’ordre est désormais clé d’accès → identifiants du Mac → écran. La console reste masquée pendant la saisie du compte : la demande ne peut plus passer derrière."
+    ]
+  },
+  {
     "version": "2.7.2",
     "date": "2026-11-22",
     "points": [
