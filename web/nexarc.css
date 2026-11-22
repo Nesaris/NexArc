@@ -76,7 +76,8 @@
 .cons-add>*+*{margin-top:9px}
 
 /* Console distante en plein cadre (iframe du mandataire ou pont VNC). */
-.remote-scrim{position:fixed;inset:0;z-index:550;background:color-mix(in srgb,var(--ink) 30%,transparent);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px}
+/* z-index sous le fond des dialogues du socle (.voile : 500) : un dialogue ouvert sur la console (identifiants Apple, confirmation) passe au-dessus, jamais dessous. */
+.remote-scrim{position:fixed;inset:0;z-index:490;background:color-mix(in srgb,var(--ink) 30%,transparent);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px}
 .remote-shell{width:min(1200px,100%);height:min(80vh,900px);background:var(--surface);border-radius:16px;box-shadow:var(--lift-hi);display:flex;flex-direction:column;overflow:hidden}
 .remote-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hair-soft);flex:none;min-width:0}
 .remote-bar b{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

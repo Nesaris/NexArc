@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.7.2",
+    "date": "2026-11-22",
+    "points": [
+      "Prise en main → Écran : sur un Mac, la demande d’identifiants (authentification Apple) s’affiche désormais au-dessus de la console et reste saisissable, y compris en plein écran — elle passait auparavant derrière, l’écran semblait rester gris."
+    ]
+  },
+  {
     "version": "2.7.1",
     "date": "2026-11-21",
     "points": [

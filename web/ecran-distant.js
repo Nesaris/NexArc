@@ -352,6 +352,10 @@ export async function ouvrirVncDistant({ url, titre, frappe = null, cle = url })
       // Un Mac sans mot de passe VNC : le serveur demande le compte du Mac
       // lui-même (authentification Apple), tapé ici et envoyé chiffré par noVNC.
       rfb.addEventListener('credentialsrequired', async e => {
+        // Un dialogue posé sur <body> ne s'affiche pas dans un plein écran natif
+        // (le navigateur ne rend que le sous-arbre plein écran) : on en sort d'abord
+        // pour que la demande d'identifiants reste visible et saisissable.
+        if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
         const types = e.detail?.types || ['password'];
         const nom = h('input', { class: 'field', autocomplete: 'username', placeholder: 'Nom du compte' });
         const mdp = h('input', { class: 'field', type: 'password', autocomplete: 'current-password', placeholder: 'Mot de passe' });
