@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.7.4",
+    "date": "2026-11-22",
+    "points": [
+      "La console charge bien sa dernière version : le numéro de version servi aux navigateurs suit enfin la version réelle (les anciens fichiers restaient en cache)."
+    ]
+  },
+  {
     "version": "2.7.3",
     "date": "2026-11-22",
     "points": [
